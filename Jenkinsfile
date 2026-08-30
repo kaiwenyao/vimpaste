@@ -182,6 +182,48 @@ spec:
                 }
             }
         }
+
+        stage('5. 验证 GitOps 仓库访问') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                container('gitops') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'k3s-home-write',
+                            usernameVariable: 'GITOPS_USER',
+                            passwordVariable: 'GITOPS_TOKEN'
+                        )
+                    ]) {
+                        sh '''
+                            rm -rf gitops-repo
+
+                            cat > /tmp/git-askpass.sh <<'EOF'
+#!/bin/sh
+case "$1" in
+  *Username*) echo "$GITOPS_USER" ;;
+  *Password*) echo "$GITOPS_TOKEN" ;;
+esac
+EOF
+
+                            chmod 700 /tmp/git-askpass.sh
+
+                            GIT_ASKPASS=/tmp/git-askpass.sh \
+                            GIT_TERMINAL_PROMPT=0 \
+                            git clone https://github.com/kaiwenyao/k3s-home.git gitops-repo
+
+                            yq '.spec.template.spec.containers[] |
+                                select(.name == "vimpaste").image' \
+                                gitops-repo/apps/vimpaste/deployment.yaml
+
+                            rm -f /tmp/git-askpass.sh
+                        '''
+                    }
+                }
+            }
+        }
     }
 
     post {
