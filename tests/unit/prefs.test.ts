@@ -4,19 +4,27 @@ import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../../src/storage/prefs'
 const KEY = 'vimpaste.prefs.v1'
 
 describe('prefs（非敏感偏好）', () => {
-  it('默认：Vim 键位、字号 14、提示未关闭、深色主题', () => {
+  it('默认：Vim 键位、字号 14、提示未关闭、深色主题、历史开启', () => {
     expect(loadPrefs()).toEqual(DEFAULT_PREFS)
     expect(DEFAULT_PREFS.editorMode).toBe('vim')
     expect(DEFAULT_PREFS.fontSize).toBe(14)
+    expect(DEFAULT_PREFS.historyEnabled).toBe(true)
   })
 
   it('保存后读取一致', () => {
-    savePrefs({ editorMode: 'emacs', fontSize: 18, hintDismissed: true, theme: 'light' })
+    savePrefs({
+      editorMode: 'emacs',
+      fontSize: 18,
+      hintDismissed: true,
+      theme: 'light',
+      historyEnabled: false,
+    })
     expect(loadPrefs()).toEqual({
       editorMode: 'emacs',
       fontSize: 18,
       hintDismissed: true,
       theme: 'light',
+      historyEnabled: false,
     })
   })
 
@@ -42,6 +50,7 @@ describe('prefs（非敏感偏好）', () => {
       fontSize: 20,
       hintDismissed: false,
       theme: 'dark',
+      historyEnabled: true,
     })
     expect(JSON.stringify(prefs)).not.toContain('secret')
   })
@@ -58,14 +67,27 @@ describe('prefs（非敏感偏好）', () => {
       fontSize: 14,
       hintDismissed: false,
       theme: 'dark',
+      historyEnabled: true,
     })
   })
 
   it('savePrefs 后 localStorage 中不存在编辑内容字段', () => {
-    savePrefs({ editorMode: 'vim', fontSize: 14, hintDismissed: false, theme: 'contrast' })
+    savePrefs({
+      editorMode: 'vim',
+      fontSize: 14,
+      hintDismissed: false,
+      theme: 'contrast',
+      historyEnabled: true,
+    })
     const raw = localStorage.getItem(KEY) ?? ''
     expect(raw).toBe(
-      JSON.stringify({ editorMode: 'vim', fontSize: 14, hintDismissed: false, theme: 'contrast' }),
+      JSON.stringify({
+        editorMode: 'vim',
+        fontSize: 14,
+        hintDismissed: false,
+        theme: 'contrast',
+        historyEnabled: true,
+      }),
     )
   })
 })

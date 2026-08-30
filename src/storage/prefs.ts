@@ -14,6 +14,8 @@ export interface Prefs {
   fontSize: number
   hintDismissed: boolean
   theme: ThemeId
+  /** 粘贴历史开关（默认开启）；历史内容本身存放在 vimpaste.history.v1 */
+  historyEnabled: boolean
 }
 
 const STORAGE_KEY = 'vimpaste.prefs.v1'
@@ -23,6 +25,7 @@ export const DEFAULT_PREFS: Prefs = {
   fontSize: 14,
   hintDismissed: false,
   theme: DEFAULT_THEME,
+  historyEnabled: true,
 }
 
 function sanitize(raw: unknown): Prefs {
@@ -41,6 +44,10 @@ function sanitize(raw: unknown): Prefs {
         ? source.hintDismissed
         : DEFAULT_PREFS.hintDismissed,
     theme: isThemeId(source.theme) ? source.theme : DEFAULT_PREFS.theme,
+    historyEnabled:
+      typeof source.historyEnabled === 'boolean'
+        ? source.historyEnabled
+        : DEFAULT_PREFS.historyEnabled,
   }
 }
 

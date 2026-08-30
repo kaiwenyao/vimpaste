@@ -54,7 +54,7 @@ test.describe('K3s 核心验收流程', () => {
     const clipboard = await page.evaluate(() => navigator.clipboard.readText())
     expect(clipboard).toBe(K3S_REPLACED)
 
-    // 6. 刷新后内容消失（编辑内容不持久化）
+    // 6. 刷新后编辑器从空白开始（历史面板中的条目按功能保留在本浏览器）
     await page.reload()
     expect(await getDoc(page)).toBe('')
     await expect(page.getByText('0 个待替换')).toBeVisible()

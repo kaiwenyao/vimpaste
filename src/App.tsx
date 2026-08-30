@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CodeMirrorEditor } from './components/CodeMirrorEditor'
 import { HelpDialog } from './components/HelpDialog'
+import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
@@ -10,6 +11,14 @@ import type { EditorApi } from './editor/createEditor'
 import { isEditorMode, normalizeFontSize } from './editor/editorMode'
 import type { EditorMode } from './editor/editorMode'
 import { jumpToPlaceholder } from './editor/navigation'
+import {
+  createHistoryId,
+  deriveTitle,
+  loadHistory,
+  saveHistory,
+  upsertHistory,
+} from './storage/history'
+import type { HistoryEntry } from './storage/history'
 import { loadPrefs, savePrefs } from './storage/prefs'
 import { isThemeId } from './theme/themes'
 import type { ThemeId } from './theme/themes'
@@ -18,6 +27,8 @@ import { copyText } from './utils/clipboard'
 const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
 const TOAST_MS = 2200
+const HISTORY_SAVE_DEBOUNCE_MS = 1500
+const NARROW_VIEWPORT_QUERY = '(max-width: 640px)'
 
 interface ToastState {
   text: string
@@ -49,6 +60,10 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(() => loadPrefs().fontSize)
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory())
+  const [historyEnabled, setHistoryEnabled] = useState(() => loadPrefs().historyEnabled)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -58,6 +73,26 @@ export default function App() {
 
   const toastTimer = useRef(0)
   const clearTimer = useRef(0)
+
+  // 历史快照需要读取最新值，用 ref 镜像状态（commitSnapshot 里避免闭包过期）
+  const historyRef = useRef(history)
+  const contentRef = useRef(content)
+  const langIdRef = useRef(langId)
+  const historyEnabledRef = useRef(historyEnabled)
+  const activeEntryIdRef = useRef<string | null>(activeEntryId)
+
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+  useEffect(() => {
+    langIdRef.current = langId
+  }, [langId])
+  useEffect(() => {
+    historyEnabledRef.current = historyEnabled
+  }, [historyEnabled])
+  useEffect(() => {
+    activeEntryIdRef.current = activeEntryId
+  }, [activeEntryId])
 
   const showToast = useCallback((text: string, kind: ToastState['kind']) => {
     window.clearTimeout(toastTimer.current)
@@ -89,10 +124,10 @@ export default function App() {
     editorRef.current?.setEditorMode(editorMode)
   }, [editorMode])
 
-  // 持久化非敏感偏好（绝不保存编辑内容）
+  // 持久化非敏感偏好（编辑内容只随粘贴历史功能保存在 vimpaste.history.v1）
   useEffect(() => {
-    savePrefs({ editorMode, fontSize, hintDismissed, theme })
-  }, [editorMode, fontSize, hintDismissed, theme])
+    savePrefs({ editorMode, fontSize, hintDismissed, theme, historyEnabled })
+  }, [editorMode, fontSize, hintDismissed, theme, historyEnabled])
 
   // 颜色主题：同步到 <html data-theme>，样式全部由 CSS 变量驱动
   useEffect(() => {
@@ -122,10 +157,14 @@ export default function App() {
   }, [])
 
   const handleDocChanged = useCallback((text: string) => {
+    contentRef.current = text
     setContent(text)
     if (text === '') {
       setManualOverride(false)
       setPlaceholderCount(0)
+      // 清空编辑器即开始新的粘贴：与历史条目解除关联（条目本身保留）
+      activeEntryIdRef.current = null
+      setActiveEntryId(null)
     }
   }, [])
 
@@ -146,12 +185,131 @@ export default function App() {
     if (isThemeId(next)) setTheme(next)
   }, [])
 
+  /** 把当前编辑器内容写入/更新历史快照（新建或续写当前条目；与最近一条相同则复用） */
+  const commitSnapshot = useCallback(() => {
+    const text = contentRef.current
+    if (!historyEnabledRef.current || text.trim() === '') return
+    const now = Date.now()
+    const current = historyRef.current
+    const prevId = activeEntryIdRef.current
+    const target =
+      (prevId ? current.find((e) => e.id === prevId) : undefined) ??
+      (current[0] && current[0].content === text ? current[0] : undefined)
+    const entry: HistoryEntry = target
+      ? {
+          ...target,
+          content: text,
+          langId: langIdRef.current,
+          title: deriveTitle(text),
+          updatedAt: now,
+        }
+      : {
+          id: createHistoryId(),
+          title: deriveTitle(text),
+          content: text,
+          langId: langIdRef.current,
+          createdAt: now,
+          updatedAt: now,
+        }
+    activeEntryIdRef.current = entry.id
+    setActiveEntryId(entry.id)
+    const next = upsertHistory(current, entry)
+    historyRef.current = next
+    setHistory(next)
+    saveHistory(next)
+  }, [])
+
+  // 防抖快照：停止输入 1.5s 后落盘；清空时的解除关联在 handleDocChanged 里完成
+  useEffect(() => {
+    if (content.trim() === '') return
+    const timer = window.setTimeout(commitSnapshot, HISTORY_SAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [content, langId, commitSnapshot])
+
+  // 复制与页面卸载前立即落盘，避免防抖窗口内的修改丢失
+  useEffect(() => {
+    const flush = () => commitSnapshot()
+    window.addEventListener('beforeunload', flush)
+    return () => window.removeEventListener('beforeunload', flush)
+  }, [commitSnapshot])
+
+  const handleToggleHistory = useCallback(() => {
+    setHistoryOpen((open) => !open)
+  }, [])
+
+  /** 一次真实粘贴 = 一条新历史：粘贴时与当前条目解除关联（旧条目保留） */
+  const handleEditorPaste = useCallback(() => {
+    if (activeEntryIdRef.current === null) return
+    activeEntryIdRef.current = null
+    setActiveEntryId(null)
+  }, [])
+
+  const handleOpenEntry = useCallback(
+    (id: string) => {
+      const entry = historyRef.current.find((e) => e.id === id)
+      if (!entry) return
+      // 切换前先把当前内容落盘，未保存的修改不会丢
+      if (contentRef.current.trim() !== '' && contentRef.current !== entry.content) {
+        commitSnapshot()
+      }
+      activeEntryIdRef.current = id
+      setActiveEntryId(id)
+      setLangId(entry.langId)
+      setManualOverride(true)
+      editorRef.current?.setDoc(entry.content)
+      editorRef.current?.view.focus()
+      if (window.matchMedia(NARROW_VIEWPORT_QUERY).matches) setHistoryOpen(false)
+    },
+    [commitSnapshot],
+  )
+
+  const handleDeleteEntry = useCallback((id: string) => {
+    const next = historyRef.current.filter((e) => e.id !== id)
+    historyRef.current = next
+    setHistory(next)
+    saveHistory(next)
+    if (activeEntryIdRef.current === id) {
+      activeEntryIdRef.current = null
+      setActiveEntryId(null)
+    }
+  }, [])
+
+  const handleClearHistory = useCallback(() => {
+    historyRef.current = []
+    setHistory([])
+    saveHistory([])
+    activeEntryIdRef.current = null
+    setActiveEntryId(null)
+  }, [])
+
+  const handleHistoryEnabledChange = useCallback(
+    (next: boolean) => {
+      historyEnabledRef.current = next
+      setHistoryEnabled(next)
+      if (!next) {
+        handleClearHistory()
+      } else if (contentRef.current.trim() !== '') {
+        // 重新打开时当前内容可能早已停止输入（防抖不会再触发），立即补一次快照
+        commitSnapshot()
+      }
+    },
+    [handleClearHistory, commitSnapshot],
+  )
+
+  const handleNewPaste = useCallback(() => {
+    if (contentRef.current.trim() !== '') commitSnapshot()
+    editorRef.current?.setDoc('')
+    editorRef.current?.view.focus()
+    if (window.matchMedia(NARROW_VIEWPORT_QUERY).matches) setHistoryOpen(false)
+  }, [commitSnapshot])
+
   const handleCopy = useCallback(async () => {
+    commitSnapshot()
     const channel = await copyText(content)
     if (channel === 'clipboard') showToast('已复制到剪贴板', 'ok')
     else if (channel === 'fallback') showToast('已复制（降级方式）', 'ok')
     else showToast('复制失败，请手动全选后按 Ctrl/Cmd+C', 'err')
-  }, [content, showToast])
+  }, [content, showToast, commitSnapshot])
 
   const handleClear = useCallback(() => {
     if (content !== '' && !clearArmed) {
@@ -180,6 +338,8 @@ export default function App() {
         theme={theme}
         onThemeChange={handleThemeChange}
         onOpenSettings={() => setSettingsOpen(true)}
+        onToggleHistory={handleToggleHistory}
+        historyOpen={historyOpen}
         placeholderCount={placeholderCount}
         onPrevPlaceholder={() => jump(-1)}
         onNextPlaceholder={() => jump(1)}
@@ -228,6 +388,7 @@ export default function App() {
             onCursor: (line, col) => setCursor({ line, col }),
             onPlaceholderCount: setPlaceholderCount,
             onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
+            onPaste: handleEditorPaste,
           }}
         />
       </main>
@@ -253,6 +414,21 @@ export default function App() {
       />
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {historyOpen && (
+        <HistoryPanel
+          open
+          entries={history}
+          enabled={historyEnabled}
+          activeId={activeEntryId}
+          onClose={() => setHistoryOpen(false)}
+          onOpenEntry={handleOpenEntry}
+          onDeleteEntry={handleDeleteEntry}
+          onClearAll={handleClearHistory}
+          onToggleEnabled={handleHistoryEnabledChange}
+          onNewPaste={handleNewPaste}
+        />
+      )}
 
       {toast && (
         <div className={`toast ${toast.kind}`} role="status">

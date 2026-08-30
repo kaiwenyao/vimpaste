@@ -12,6 +12,8 @@ export interface ToolbarProps {
   theme: ThemeId
   onThemeChange: (theme: ThemeId) => void
   onOpenSettings: () => void
+  onToggleHistory: () => void
+  historyOpen: boolean
   placeholderCount: number
   onPrevPlaceholder: () => void
   onNextPlaceholder: () => void
@@ -31,6 +33,8 @@ export function Toolbar(props: ToolbarProps) {
     theme,
     onThemeChange,
     onOpenSettings,
+    onToggleHistory,
+    historyOpen,
     placeholderCount,
     onPrevPlaceholder,
     onNextPlaceholder,
@@ -54,6 +58,32 @@ export function Toolbar(props: ToolbarProps) {
         </span>
         <span className="brand-name">VimPaste</span>
       </span>
+
+      <button
+        type="button"
+        className="btn icon"
+        aria-label="历史记录"
+        title="粘贴历史（保存在本浏览器）"
+        aria-haspopup="dialog"
+        aria-expanded={historyOpen}
+        onClick={onToggleHistory}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M12 7v5l3.5 2" />
+        </svg>
+      </button>
 
       <span className="lang-wrap">
         <select
