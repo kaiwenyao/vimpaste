@@ -105,10 +105,14 @@ export default function App() {
     historyDockedRef.current = historyDocked
   }, [historyDocked])
 
-  // 跟随视口宽度在「固定面板」与「抽屉」间切换
+  // 跟随视口宽度在「固定面板」与「抽屉」间切换。跨界时按已存偏好重同步瞬态显隐，
+  // 避免面板开着拖窄变成遮挡抽屉、或抽屉关着拖宽后面板不按偏好恢复（只改瞬态，不写偏好）
   useEffect(() => {
     const mq = window.matchMedia(DOCKED_HISTORY_QUERY)
-    const onChange = (e: MediaQueryListEvent) => setHistoryDocked(e.matches)
+    const onChange = (e: MediaQueryListEvent) => {
+      setHistoryDocked(e.matches)
+      setHistoryOpen(loadPrefs().historyPanelOpen && e.matches)
+    }
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
   }, [])
@@ -260,14 +264,19 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', flush)
   }, [commitSnapshot])
 
-  /** 用户显式切换面板显隐：状态与偏好一起持久化 */
+  /** 固定面板的显式显隐切换：状态与偏好一起持久化（抽屉形态的开合走 setHistoryOpen，纯瞬态） */
   const setHistoryPanelOpen = useCallback((next: boolean) => {
     setHistoryOpen(next)
     savePrefs({ ...loadPrefs(), historyPanelOpen: next })
   }, [])
 
   const handleToggleHistory = useCallback(() => {
-    setHistoryPanelOpen(!historyOpen)
+    // 只有固定面板的切换落盘；窄视口抽屉是临时状态，不覆盖桌面端的展开偏好
+    if (historyDockedRef.current) {
+      setHistoryPanelOpen(!historyOpen)
+    } else {
+      setHistoryOpen(!historyOpen)
+    }
   }, [historyOpen, setHistoryPanelOpen])
 
   /** 一次真实粘贴 = 一条新历史：粘贴时与当前条目解除关联（旧条目保留） */
@@ -474,7 +483,8 @@ export default function App() {
           entries={history}
           enabled={historyEnabled}
           activeId={activeEntryId}
-          onClose={() => setHistoryPanelOpen(false)}
+          // 抽屉的 Esc / 遮罩 / ✕ 关闭都只改瞬态，不写 historyPanelOpen
+          onClose={() => setHistoryOpen(false)}
           onOpenEntry={handleOpenEntry}
           onDeleteEntry={handleDeleteEntry}
           onClearAll={handleClearHistory}

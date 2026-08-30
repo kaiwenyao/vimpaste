@@ -109,5 +109,25 @@ test.describe('粘贴历史', () => {
 
     await page.keyboard.press('Escape')
     await expect(panel).toHaveCount(0)
+    // 抽屉开合是瞬态：不覆盖桌面端的展开偏好
+    const prefs = JSON.parse(
+      (await page.evaluate(() => localStorage.getItem('vimpaste.prefs.v1'))) ?? '{}',
+    )
+    expect(prefs.historyPanelOpen).toBe(true)
+  })
+
+  test('跨断点拖拽：变窄面板收起且抽屉不弹出，变宽按偏好恢复', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', '以桌面初始宽视口为起点拖拽视口')
+    await page.goto('/')
+    const panel = page.locator('.history-panel')
+
+    await expect(panel).toBeVisible()
+    // 拖窄：固定面板收起，抽屉也不自动弹出
+    await page.setViewportSize({ width: 375, height: 720 })
+    await expect(panel).toHaveCount(0)
+    await expect(page.locator('.history-backdrop')).toHaveCount(0)
+    // 拖宽：按已存偏好恢复固定面板
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await expect(panel).toBeVisible()
   })
 })

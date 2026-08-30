@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App'
@@ -567,6 +567,70 @@ describe('粘贴历史固定面板（宽视口）', () => {
 
     await user.click(screen.getByRole('button', { name: '历史记录' }))
     expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
+  })
+
+  it('窄视口抽屉开合是瞬态：打开与 Esc 关闭都不写 historyPanelOpen', async () => {
+    // jsdom 默认 matchMedia 桩即窄视口行为（matches 恒为 false）
+    const user = userEvent.setup()
+    // 模拟桌面端用户此前隐藏过面板
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        editorMode: 'vim',
+        fontSize: 14,
+        hintDismissed: true,
+        theme: 'dark',
+        historyEnabled: true,
+        historyPanelOpen: false,
+      }),
+    )
+    render(<App />)
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.getByRole('dialog', { name: '粘贴历史' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+    // 桌面端的隐藏偏好未被窄视口的开合覆盖
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
+  })
+
+  it('视口跨越断点时按偏好重同步显隐，且不写偏好', () => {
+    const listeners: Array<(e: MediaQueryListEvent) => void> = []
+    const raw = {
+      matches: true,
+      media: '(min-width: 768px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn((_: string, listener: (e: MediaQueryListEvent) => void) => {
+        listeners.push(listener)
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }
+    vi.spyOn(window, 'matchMedia').mockReturnValue(raw as unknown as MediaQueryList)
+    render(<App />)
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    // 拖窄：固定面板收起，抽屉也不自动弹出（不遮挡编辑器）
+    act(() => {
+      raw.matches = false
+      listeners.forEach((l) => l({ matches: false } as MediaQueryListEvent))
+    })
+    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+
+    // 拖宽：按已存偏好恢复固定面板
+    act(() => {
+      raw.matches = true
+      listeners.forEach((l) => l({ matches: true } as MediaQueryListEvent))
+    })
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    // 全程只改瞬态，未覆盖偏好
     expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
   })
 })
