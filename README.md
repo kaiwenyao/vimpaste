@@ -14,11 +14,12 @@ AI 返回的安装命令往往很长，中间夹着 `YOUR_TOKEN`、`<IP_ADDRESS>
 ## 功能
 
 - **编辑器**：CodeMirror 6，行号、当前行高亮、括号匹配、搜索（`Ctrl/Cmd+F`）、语法高亮；长行横向滚动，不做任何自动格式化，粘贴什么复制的就是什么。
-- **Vim 模式**（默认开启，可一键关闭）：Normal / Insert / Visual / Command-line，支持 `hjkl`、`w/b/e`、`0/$`、`gg/G`、`f/t`、`i/a/o`、`x/r`、`d/c/y` 与文本对象、`/`、`?`、`n/N`、`u`、`Ctrl-r` 等，底部状态栏实时显示当前模式。
+- **编辑器键位（设置中切换）**：普通编辑器 / **Vim**（默认）/ **Emacs**（Ctrl-a/e/k/b/f 等 readline 键位）；Vim 支持 Normal / Insert / Visual / Command-line，`hjkl`、`w/b/e`、`0/$`、`gg/G`、`f/t`、`i/a/o`、`x/r`、`d/c/y` 与文本对象、`/`、`?`、`n/N`、`u`、`Ctrl-r` 等，底部状态栏实时显示当前模式。
 - **占位符识别与导航**：识别 `YOUR_TOKEN`、`REPLACE_ME`、`<TOKEN>`、`<IP_ADDRESS>`、`${PASSWORD}`、`$YOUR_TOKEN`、`*_HERE` 及引号中的占位内容；工具栏显示待替换数量，提供鼠标可用的上一个/下一个按钮；Vim Normal 模式下 `]v` / `[v` 跳转并选中占位文本，直接替换。
 - **语言自动识别**：Shell 特征优先（Shebang、管道进 `sh`、`sh -s -`、续行反斜杠、环境变量赋值、常见命令），再以 highlight.js 在受限候选语言（Shell/Bash、PowerShell、YAML、JSON、JavaScript、TypeScript、Python、SQL、Dockerfile、Nginx、纯文本）内评分；语言包按需加载，不进首屏包；手动选择后不再被自动覆盖。
 - **复制与反馈**：一键复制编辑器全部内容（`Ctrl/Cmd+Enter` 或按钮），Clipboard API 不可用时自动降级，成功后给出明确提示。
-- **颜色主题**：工具栏一键切换深色（默认）/ 浅色 / 高对比，选择会记住（非敏感偏好）。
+- **设置面板**：工具栏 ⚙ 打开，可切换键位模式、编辑器字体大小（12–20px，即时生效）与颜色主题，选择会记住（非敏感偏好）。
+- **颜色主题**：深色（默认）/ 浅色 / 高对比，工具栏或设置面板中均可切换。
 - **隐私**：无后端、无账号、无分析统计；编辑内容只存在于内存，不写入 URL、localStorage、sessionStorage、IndexedDB 或日志；刷新即消失；仅保存 Vim 开关等非敏感偏好；生产构建注入 CSP（仅限同源资源）。
 - **PWA**：可安装，静态资源缓存后断网可用核心编辑功能，不缓存编辑内容；发布新版本后页面会出现「发现新版本」提示条，点击「立即刷新」完成更新（不会自动重载，避免丢失未复制的内容）。
 
@@ -51,7 +52,7 @@ npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、�
 
 - 编辑、语言识别、占位符标记、语法高亮、复制全部在浏览器本地完成，没有后端服务器。
 - 编辑内容不写入任何 Web 存储、URL 或日志，不发送到网络；刷新或关闭页面后内容消失。
-- 仅在 localStorage 保存三个非敏感偏好：Vim 开关、首次提示是否已关闭、颜色主题选择。
+- 仅在 localStorage 保存四个非敏感偏好：键位模式、字体大小、首次提示是否已关闭、颜色主题选择。
 - 界面右下角固定显示 `Local only · 未上传`。
 - 注意：浏览器扩展或操作系统级剪贴板同步不在本应用控制范围内。
 - 详细说明见 [docs/privacy.md](docs/privacy.md)。
@@ -67,7 +68,7 @@ npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、�
 | `u` / `Ctrl+r`   | 撤销 / 重做                                                         |
 | `Esc`            | 返回 Normal 模式 / 关闭对话框                                       |
 
-Vim 开启时由 Vim 处理按键；关闭 Vim 后 `Tab` 可正常移出编辑器。浏览器刷新、关闭标签页等系统快捷键不受影响。
+键位模式在设置（⚙）中切换：Vim 模式由 Vim 处理按键；普通编辑器模式按系统标准行为处理（`Tab` 可移出编辑器）。浏览器刷新、关闭标签页等系统快捷键不受影响。
 
 ## License
 

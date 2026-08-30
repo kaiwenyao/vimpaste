@@ -1,4 +1,4 @@
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import {
   EditorView,
   drawSelection,
@@ -11,11 +11,13 @@ import {
   crosshairCursor,
 } from '@codemirror/view'
 import { bracketMatching } from '@codemirror/language'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, emacsStyleKeymap, history, historyKeymap } from '@codemirror/commands'
 import { search, searchKeymap } from '@codemirror/search'
 import { vim } from '@replit/codemirror-vim'
+import type { Extension } from '@codemirror/state'
 import type { LangId } from '../detection/language'
 import { loadCmLanguage } from './cmLanguage'
+import { type EditorMode } from './editorMode'
 import { placeholderField, placeholderHighlight, placeholderRanges } from './placeholderField'
 import { vimpasteSyntax, vimpasteTheme } from './theme'
 import { attachVimModeTracking, registerPlaceholderNavigation } from './vimSetup'
@@ -29,10 +31,17 @@ export interface EditorCallbacks {
 
 export interface EditorApi {
   view: EditorView
-  setVim(enabled: boolean): void
+  setEditorMode(mode: EditorMode): void
   setLanguage(id: LangId): Promise<void>
   setDoc(text: string): void
   destroy(): void
+}
+
+/** 各键位模式对应的扩展；Vim 之外不启用模态编辑 */
+function editorModeExtensions(mode: EditorMode): Extension[] {
+  if (mode === 'vim') return [vim()]
+  if (mode === 'emacs') return [Prec.high(keymap.of(emacsStyleKeymap))]
+  return []
 }
 
 /**
@@ -44,11 +53,12 @@ export interface EditorApi {
 export function createEditor(
   parent: HTMLElement,
   callbacks: EditorCallbacks,
-  options: { vim: boolean } = { vim: true },
+  options: { editorMode: EditorMode } = { editorMode: 'vim' },
 ): EditorApi {
+  // ]v / [v 映射为全局幂等注册
   registerPlaceholderNavigation()
 
-  const vimCompartment = new Compartment()
+  const modeCompartment = new Compartment()
   const languageCompartment = new Compartment()
 
   const updateListener = EditorView.updateListener.of((u) => {
@@ -79,7 +89,7 @@ export function createEditor(
     vimpasteTheme,
     vimpasteSyntax,
     updateListener,
-    vimCompartment.of(options.vim ? [vim()] : []),
+    modeCompartment.of(editorModeExtensions(options.editorMode)),
     languageCompartment.of([]),
     keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap]),
   ]
@@ -89,13 +99,19 @@ export function createEditor(
     parent,
   })
 
-  attachVimModeTracking(view, callbacks.onVimMode)
+  if (options.editorMode === 'vim') {
+    attachVimModeTracking(view, callbacks.onVimMode)
+  }
+
+  let currentMode: EditorMode = options.editorMode
 
   return {
     view,
-    setVim(enabled) {
-      view.dispatch({ effects: vimCompartment.reconfigure(enabled ? [vim()] : []) })
-      if (enabled) {
+    setEditorMode(mode) {
+      if (mode === currentMode) return
+      currentMode = mode
+      view.dispatch({ effects: modeCompartment.reconfigure(editorModeExtensions(mode)) })
+      if (mode === 'vim') {
         attachVimModeTracking(view, callbacks.onVimMode)
       } else {
         callbacks.onVimMode(null)

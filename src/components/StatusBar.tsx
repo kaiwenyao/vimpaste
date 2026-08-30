@@ -1,5 +1,7 @@
+import type { EditorMode } from '../editor/editorMode'
+
 export interface StatusBarProps {
-  vimEnabled: boolean
+  editorMode: EditorMode
   vimMode: string | null
   line: number
   col: number
@@ -17,15 +19,17 @@ const MODE_CLASS: Record<string, string> = {
   REPLACE: 'replace',
 }
 
-export function StatusBar({ vimEnabled, vimMode, line, col, langLabel, chars }: StatusBarProps) {
-  const mode = !vimEnabled ? null : (vimMode ?? 'NORMAL')
+export function StatusBar({ editorMode, vimMode, line, col, langLabel, chars }: StatusBarProps) {
+  const mode = editorMode === 'vim' ? (vimMode ?? 'NORMAL') : null
+  const offMode = editorMode === 'emacs' ? 'emacs' : 'off'
+  const offLabel = editorMode === 'emacs' ? 'EMACS' : '—'
   return (
     <footer className="statusbar">
       <span
-        className={`mode-badge mode-${mode ? (MODE_CLASS[mode] ?? 'normal') : 'off'}`}
-        aria-label={`Vim 模式：${mode ?? '关闭'}`}
+        className={`mode-badge mode-${mode ? (MODE_CLASS[mode] ?? 'normal') : offMode}`}
+        aria-label={`编辑器模式：${mode ?? offLabel}`}
       >
-        {mode ?? '—'}
+        {mode ?? offLabel}
       </span>
       <span className="status-item">
         行 {line}，列 {col}

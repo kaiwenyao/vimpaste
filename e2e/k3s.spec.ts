@@ -192,20 +192,24 @@ test.describe('Vim 常用操作验证', () => {
 test.describe('Vim 偏好与清空', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
 
-  test('Vim 开关持久化，内容刷新消失；清空需确认', async ({ page }) => {
+  test('键位偏好持久化（设置面板），内容刷新消失；清空需确认', async ({ page }) => {
     await page.goto('/')
     await setDoc(page, K3S)
 
-    // 关闭 Vim → 刷新后仍关闭
-    await page.getByRole('switch', { name: 'Vim 模式' }).click()
+    // 切到普通编辑器模式 → 刷新后仍保留
+    await page.getByRole('button', { name: '设置' }).click()
+    await page.getByRole('radio', { name: /普通编辑器/ }).click()
+    await page.getByRole('button', { name: '关闭设置' }).click()
     await page.reload()
-    await expect(page.getByRole('switch', { name: 'Vim 模式' })).not.toBeChecked()
+    await expect(page.locator('.mode-badge')).toHaveText('—')
     expect(await getDoc(page)).toBe('')
 
-    // 重新打开 Vim
-    await page.getByRole('switch', { name: 'Vim 模式' }).click()
+    // 切回 Vim
+    await page.getByRole('button', { name: '设置' }).click()
+    await page.getByRole('radio', { name: /^Vim/ }).click()
+    await page.getByRole('button', { name: '关闭设置' }).click()
     await page.reload()
-    await expect(page.getByRole('switch', { name: 'Vim 模式' })).toBeChecked()
+    await expect(page.locator('.mode-badge')).toHaveText('NORMAL')
 
     // 清空确认流程
     await setDoc(page, K3S)
