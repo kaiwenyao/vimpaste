@@ -183,7 +183,9 @@ spec:
             }
         }
 
-        stage('5. 验证 GitOps 仓库访问') {
+        // 本地验证 GitOps 改单流程：用 yq 把镜像改成本次 commit 的镜像并查看
+        // diff；暂时不 commit、不 push 到 k3s-home。
+        stage('5. 更新 GitOps 清单（本地验证）') {
             when {
                 branch 'main'
             }
@@ -207,16 +209,30 @@ case "$1" in
   *Password*) echo "$GITOPS_TOKEN" ;;
 esac
 EOF
-
                             chmod 700 /tmp/git-askpass.sh
 
                             GIT_ASKPASS=/tmp/git-askpass.sh \
                             GIT_TERMINAL_PROMPT=0 \
                             git clone https://github.com/kaiwenyao/k3s-home.git gitops-repo
 
-                            yq '.spec.template.spec.containers[] |
-                                select(.name == "vimpaste").image' \
-                                gitops-repo/apps/vimpaste/deployment.yaml
+                            # gitops 容器与 docker 容器一样以 root 运行，而工作区
+                            # 属主是 jnlp 的 jenkins 用户：不先标记 safe.directory，
+                            # 下面的 git rev-parse 会因 dubious ownership 失败
+                            #（同 Stage 4 的处理）。
+                            git config --global --add safe.directory ${WORKSPACE} || true
+                            git config --global --add safe.directory "$(pwd)" || true
+
+                            NEW_IMAGE="ghcr.io/kaiwenyao/vimpaste:$(git rev-parse --short HEAD)"
+                            export NEW_IMAGE
+
+                            echo "新镜像: $NEW_IMAGE"
+
+                            yq -i '
+                              (.spec.template.spec.containers[] |
+                               select(.name == "vimpaste").image) = strenv(NEW_IMAGE)
+                            ' gitops-repo/apps/vimpaste/deployment.yaml
+
+                            git -C gitops-repo diff -- apps/vimpaste/deployment.yaml
 
                             rm -f /tmp/git-askpass.sh
                         '''
