@@ -113,11 +113,9 @@ spec:
         }
 
         stage('4. 构建并推送镜像') {
-            // changeRequest() 在构建来自 Pull Request 时为真。PR 只需验证代码
-            // 能过测试，不该往镜像仓库推产物，因此这一步跳过。
-            when {
-                not { changeRequest() }
-            }
+            // 不区分分支与 PR：任何构建（包括 PR 构建）都推送镜像，
+            // 便于在合入前就能拿 PR 的镜像到真实环境（如 k3s）验证。
+            // 标签是本次 commit 的短 SHA，各分支/PR 的镜像互不覆盖。
             steps {
                 container('docker') {
                     script {
