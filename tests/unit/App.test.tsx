@@ -23,6 +23,7 @@ function getDoc(): string {
 
 beforeEach(() => {
   localStorage.clear()
+  delete document.documentElement.dataset.theme
 })
 
 afterEach(() => {
@@ -39,8 +40,37 @@ describe('App 基础渲染与可访问性', () => {
     expect(screen.getByRole('button', { name: '清空编辑器' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '快捷键帮助' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '语言' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '颜色主题' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一个占位符' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '上一个占位符' })).toBeDisabled()
+  })
+
+  it('切换颜色主题：同步 html[data-theme] 并持久化，编辑内容仍不落盘', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const select = screen.getByRole('combobox', { name: '颜色主题' })
+    expect(select).toHaveValue('dark')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+
+    await user.selectOptions(select, 'light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').theme).toBe('light')
+
+    setDoc(K3S)
+    const stored = Array.from({ length: localStorage.length }, (_, i) =>
+      localStorage.getItem(localStorage.key(i) ?? ''),
+    )
+    expect(JSON.stringify(stored)).not.toContain('YOUR_TOKEN')
+
+    // "刷新"：重挂载后主题保留
+    cleanup()
+    render(<App />)
+    expect(screen.getByRole('combobox', { name: '颜色主题' })).toHaveValue('light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(screen.getByRole('combobox', { name: '颜色主题' })).toBeEnabled()
+    // 高对比主题也可选
+    await user.selectOptions(screen.getByRole('combobox', { name: '颜色主题' }), 'contrast')
+    expect(document.documentElement.dataset.theme).toBe('contrast')
   })
 
   it('首次使用提示显示核心流程且可关闭（持久化）', async () => {

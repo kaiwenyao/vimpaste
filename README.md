@@ -18,6 +18,7 @@ AI 返回的安装命令往往很长，中间夹着 `YOUR_TOKEN`、`<IP_ADDRESS>
 - **占位符识别与导航**：识别 `YOUR_TOKEN`、`REPLACE_ME`、`<TOKEN>`、`<IP_ADDRESS>`、`${PASSWORD}`、`$YOUR_TOKEN`、`*_HERE` 及引号中的占位内容；工具栏显示待替换数量，提供鼠标可用的上一个/下一个按钮；Vim Normal 模式下 `]v` / `[v` 跳转并选中占位文本，直接替换。
 - **语言自动识别**：Shell 特征优先（Shebang、管道进 `sh`、`sh -s -`、续行反斜杠、环境变量赋值、常见命令），再以 highlight.js 在受限候选语言（Shell/Bash、PowerShell、YAML、JSON、JavaScript、TypeScript、Python、SQL、Dockerfile、Nginx、纯文本）内评分；语言包按需加载，不进首屏包；手动选择后不再被自动覆盖。
 - **复制与反馈**：一键复制编辑器全部内容（`Ctrl/Cmd+Enter` 或按钮），Clipboard API 不可用时自动降级，成功后给出明确提示。
+- **颜色主题**：工具栏一键切换深色（默认）/ 浅色 / 高对比，选择会记住（非敏感偏好）。
 - **隐私**：无后端、无账号、无分析统计；编辑内容只存在于内存，不写入 URL、localStorage、sessionStorage、IndexedDB 或日志；刷新即消失；仅保存 Vim 开关等非敏感偏好；生产构建注入 CSP（仅限同源资源）。
 - **PWA**：可安装，静态资源缓存后断网可用核心编辑功能，不缓存编辑内容，新版本自动更新。
 
@@ -50,7 +51,7 @@ npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、�
 
 - 编辑、语言识别、占位符标记、语法高亮、复制全部在浏览器本地完成，没有后端服务器。
 - 编辑内容不写入任何 Web 存储、URL 或日志，不发送到网络；刷新或关闭页面后内容消失。
-- 仅在 localStorage 保存两个非敏感布尔偏好：Vim 开关、首次提示是否已关闭。
+- 仅在 localStorage 保存三个非敏感偏好：Vim 开关、首次提示是否已关闭、颜色主题选择。
 - 界面右下角固定显示 `Local only · 未上传`。
 - 注意：浏览器扩展或操作系统级剪贴板同步不在本应用控制范围内。
 - 详细说明见 [docs/privacy.md](docs/privacy.md)。

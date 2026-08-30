@@ -9,6 +9,8 @@ import { jumpToPlaceholder } from './editor/navigation'
 import type { EditorApi } from './editor/createEditor'
 import { loadPrefs, savePrefs } from './storage/prefs'
 import { copyText } from './utils/clipboard'
+import { isThemeId } from './theme/themes'
+import type { ThemeId } from './theme/themes'
 
 const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
@@ -40,6 +42,7 @@ export default function App() {
   const [cursor, setCursor] = useState({ line: 1, col: 1 })
   const [vimEnabled, setVimEnabled] = useState(() => loadPrefs().vimEnabled)
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
+  const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
@@ -69,8 +72,13 @@ export default function App() {
   // 应用 Vim 开关并持久化（仅保存非敏感偏好，绝不保存编辑内容）
   useEffect(() => {
     editorRef.current?.setVim(vimEnabled)
-    savePrefs({ vimEnabled, hintDismissed })
-  }, [vimEnabled, hintDismissed])
+    savePrefs({ vimEnabled, hintDismissed, theme })
+  }, [vimEnabled, hintDismissed, theme])
+
+  // 颜色主题：同步到 <html data-theme>，样式全部由 CSS 变量驱动
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
 
   useEffect(() => {
     void editorRef.current?.setLanguage(langId)
@@ -111,6 +119,10 @@ export default function App() {
     if (!enabled) setVimMode(null)
   }, [])
 
+  const handleThemeChange = useCallback((next: ThemeId) => {
+    if (isThemeId(next)) setTheme(next)
+  }, [])
+
   const handleCopy = useCallback(async () => {
     const channel = await copyText(content)
     if (channel === 'clipboard') showToast('已复制到剪贴板', 'ok')
@@ -144,6 +156,8 @@ export default function App() {
         onLanguageChange={handleLanguageChange}
         vimEnabled={vimEnabled}
         onVimToggle={handleVimToggle}
+        theme={theme}
+        onThemeChange={handleThemeChange}
         placeholderCount={placeholderCount}
         onPrevPlaceholder={() => jump(-1)}
         onNextPlaceholder={() => jump(1)}

@@ -1,11 +1,16 @@
 /**
- * 非敏感偏好存储：只允许保存显式白名单内的布尔偏好（如 Vim 开关、提示关闭状态）。
+ * 非敏感偏好存储：只允许保存显式白名单内的偏好
+ * （Vim 开关、提示关闭状态、颜色主题）。
  * 编辑器内容绝不写入 localStorage / sessionStorage / IndexedDB / URL / 日志。
  */
+
+import { DEFAULT_THEME, isThemeId } from '../theme/themes'
+import type { ThemeId } from '../theme/themes'
 
 export interface Prefs {
   vimEnabled: boolean
   hintDismissed: boolean
+  theme: ThemeId
 }
 
 const STORAGE_KEY = 'vimpaste.prefs.v1'
@@ -13,6 +18,7 @@ const STORAGE_KEY = 'vimpaste.prefs.v1'
 export const DEFAULT_PREFS: Prefs = {
   vimEnabled: true,
   hintDismissed: false,
+  theme: DEFAULT_THEME,
 }
 
 function sanitize(raw: unknown): Prefs {
@@ -24,6 +30,7 @@ function sanitize(raw: unknown): Prefs {
       typeof source.hintDismissed === 'boolean'
         ? source.hintDismissed
         : DEFAULT_PREFS.hintDismissed,
+    theme: isThemeId(source.theme) ? source.theme : DEFAULT_PREFS.theme,
   }
 }
 

@@ -1,25 +1,186 @@
-/* VimPaste — 深色、克制的工具界面。全部使用系统字体栈，不加载远程资源。 */
+/* VimPaste — 克制的工具界面。全部使用系统字体栈，不加载远程资源。
+   三套颜色主题：深色（默认）、浅色、高对比；通过 html[data-theme] 切换。 */
 
 :root {
+  color-scheme: dark;
   --bg-page: #0b0e12;
   --bg-editor: #10151c;
   --bg-toolbar: #0e1319;
   --bg-panel: #141a22;
   --bg-control: #1a212b;
+  --control-hover-bg: #212a35;
+  --control-hover-border: #33404f;
   --border: #232c37;
   --text: #d7dee7;
   --muted: #8b97a6;
   --muted-2: #5c6879;
   --accent: #4cc2a9;
   --accent-strong: #5fd6bd;
+  --on-accent: #06251f;
+  --accent-soft: rgba(76, 194, 169, 0.1);
+  --accent-border: rgba(76, 194, 169, 0.45);
+  --accent-faint: rgba(76, 194, 169, 0.22);
   --danger: #f7768e;
+  --danger-bg: rgba(247, 118, 142, 0.15);
+  --danger-border: rgba(247, 118, 142, 0.55);
+  --warn: #e0af68;
+  --warn-bg: rgba(224, 175, 104, 0.15);
   --ph-bg: rgba(224, 175, 104, 0.14);
   --ph-border: rgba(224, 175, 104, 0.55);
+  --backdrop: rgba(4, 6, 9, 0.62);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  --sel: rgba(122, 162, 247, 0.28);
+  --active-line: rgba(122, 162, 247, 0.07);
+  --active-line-gutter: rgba(122, 162, 247, 0.12);
+  --search: rgba(224, 175, 104, 0.28);
+  --search-active: rgba(224, 175, 104, 0.55);
+  --bracket-bg: rgba(143, 177, 255, 0.18);
+  --bracket-border: rgba(143, 177, 255, 0.45);
+  --switch-checked: rgba(76, 194, 169, 0.35);
+  --info-bg: #1a56b0;
+  --info-bg-soft: rgba(122, 162, 247, 0.15);
+  --ok: #9ece6a;
+  --ok-bg: rgba(158, 206, 106, 0.15);
+  --visual: #bb9af7;
+  --visual-bg: rgba(187, 154, 247, 0.15);
+  --syn-keyword: #7aa2f7;
+  --syn-control: #bb9af7;
+  --syn-string: #9ece6a;
+  --syn-number: #ff9e64;
+  --syn-comment: #5f6b85;
+  --syn-variable: #d7dee7;
+  --syn-func: #7dcfff;
+  --syn-operator: #89ddff;
+  --syn-def: #e0af68;
+  --syn-tag: #bb9af7;
+  --syn-attr: #73daca;
+  --syn-meta: #a9b1d6;
+  --syn-link: #7dcfff;
+  --syn-heading: #e0af68;
+  --syn-invalid: #f7768e;
   --font-ui:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', sans-serif;
   --font-mono:
     ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-page: #f2f5f7;
+  --bg-editor: #ffffff;
+  --bg-toolbar: #eaeef2;
+  --bg-panel: #ffffff;
+  --bg-control: #e2e8ee;
+  --control-hover-bg: #d7dfe7;
+  --control-hover-border: #b6c3cf;
+  --border: #ccd6df;
+  --text: #1e2833;
+  --muted: #55636f;
+  --muted-2: #8794a0;
+  --accent: #0e8a74;
+  --accent-strong: #0a7260;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(14, 138, 116, 0.1);
+  --accent-border: rgba(14, 138, 116, 0.4);
+  --accent-faint: rgba(14, 138, 116, 0.28);
+  --danger: #c5304b;
+  --danger-bg: rgba(197, 48, 75, 0.1);
+  --danger-border: rgba(197, 48, 75, 0.5);
+  --warn: #9a6700;
+  --warn-bg: rgba(154, 103, 0, 0.12);
+  --ph-bg: rgba(154, 103, 0, 0.12);
+  --ph-border: rgba(154, 103, 0, 0.5);
+  --backdrop: rgba(15, 23, 32, 0.45);
+  --shadow: 0 18px 48px rgba(23, 36, 49, 0.18);
+  --sel: rgba(26, 86, 176, 0.22);
+  --active-line: rgba(26, 86, 176, 0.06);
+  --active-line-gutter: rgba(26, 86, 176, 0.1);
+  --search: rgba(154, 103, 0, 0.2);
+  --search-active: rgba(154, 103, 0, 0.38);
+  --bracket-bg: rgba(26, 86, 176, 0.12);
+  --bracket-border: rgba(26, 86, 176, 0.4);
+  --switch-checked: rgba(14, 138, 116, 0.35);
+  --info-bg: #1a56b0;
+  --info-bg-soft: rgba(26, 86, 176, 0.12);
+  --ok: #2e7d32;
+  --ok-bg: rgba(46, 125, 50, 0.12);
+  --visual: #7c3aad;
+  --visual-bg: rgba(124, 58, 173, 0.12);
+  --syn-keyword: #1a56b0;
+  --syn-control: #7c3aad;
+  --syn-string: #2e7d32;
+  --syn-number: #b45309;
+  --syn-comment: #9099a4;
+  --syn-variable: #1e2833;
+  --syn-func: #0e7490;
+  --syn-operator: #0e7490;
+  --syn-def: #9a6700;
+  --syn-tag: #7c3aad;
+  --syn-attr: #0e8a74;
+  --syn-meta: #55636f;
+  --syn-link: #0e7490;
+  --syn-heading: #9a6700;
+  --syn-invalid: #c5304b;
+}
+
+[data-theme='contrast'] {
+  color-scheme: dark;
+  --bg-page: #000000;
+  --bg-editor: #000000;
+  --bg-toolbar: #0a0a0a;
+  --bg-panel: #0d0d0d;
+  --bg-control: #161616;
+  --control-hover-bg: #222222;
+  --control-hover-border: #6a6a6a;
+  --border: #5a5a5a;
+  --text: #ffffff;
+  --muted: #c9cfd6;
+  --muted-2: #9aa3ad;
+  --accent: #00e6a8;
+  --accent-strong: #4dffd8;
+  --on-accent: #001b12;
+  --accent-soft: rgba(0, 230, 168, 0.14);
+  --accent-border: rgba(0, 230, 168, 0.6);
+  --accent-faint: rgba(0, 230, 168, 0.35);
+  --danger: #ff8aa0;
+  --danger-bg: rgba(255, 138, 160, 0.18);
+  --danger-border: #ff8aa0;
+  --warn: #ffd166;
+  --warn-bg: rgba(255, 209, 102, 0.18);
+  --ph-bg: rgba(255, 209, 102, 0.2);
+  --ph-border: #ffd166;
+  --backdrop: rgba(0, 0, 0, 0.75);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.8);
+  --sel: rgba(0, 230, 168, 0.35);
+  --active-line: rgba(255, 255, 255, 0.08);
+  --active-line-gutter: rgba(255, 255, 255, 0.14);
+  --search: rgba(255, 209, 102, 0.35);
+  --search-active: rgba(255, 209, 102, 0.6);
+  --bracket-bg: rgba(255, 255, 255, 0.15);
+  --bracket-border: rgba(255, 255, 255, 0.5);
+  --switch-checked: rgba(0, 230, 168, 0.45);
+  --info-bg: #8ab4ff;
+  --info-bg-soft: rgba(138, 180, 255, 0.22);
+  --ok: #7dffa8;
+  --ok-bg: rgba(125, 250, 168, 0.2);
+  --visual: #d0a5ff;
+  --visual-bg: rgba(208, 165, 255, 0.22);
+  --syn-keyword: #8ab4ff;
+  --syn-control: #d0a5ff;
+  --syn-string: #7dffa8;
+  --syn-number: #ffb86b;
+  --syn-comment: #9aa3ad;
+  --syn-variable: #ffffff;
+  --syn-func: #6ee7ff;
+  --syn-operator: #6ee7ff;
+  --syn-def: #ffd166;
+  --syn-tag: #d0a5ff;
+  --syn-attr: #4dffd8;
+  --syn-meta: #c9cfd6;
+  --syn-link: #6ee7ff;
+  --syn-heading: #ffd166;
+  --syn-invalid: #ff8aa0;
 }
 
 * {
@@ -88,7 +249,7 @@ input:focus-visible,
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 12px;
-  color: #06251f;
+  color: var(--on-accent);
   background: var(--accent);
   border-radius: 5px;
   padding: 3px 6px;
@@ -126,14 +287,14 @@ input:focus-visible,
 
 .lang-badge.auto {
   color: var(--accent);
-  border-color: rgba(76, 194, 169, 0.45);
-  background: rgba(76, 194, 169, 0.08);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .lang-badge.manual {
-  color: #e0af68;
-  border-color: rgba(224, 175, 104, 0.45);
-  background: rgba(224, 175, 104, 0.08);
+  color: var(--warn);
+  border-color: var(--warn-bg);
+  background: var(--warn-bg);
 }
 
 .vim-toggle {
@@ -174,7 +335,7 @@ input:focus-visible,
 }
 
 .vim-toggle input[role='switch']:checked {
-  background: rgba(76, 194, 169, 0.35);
+  background: var(--switch-checked);
   border-color: var(--accent);
 }
 
@@ -219,8 +380,8 @@ input:focus-visible,
 }
 
 .btn:hover:not(:disabled) {
-  border-color: #33404f;
-  background: #212a35;
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
 }
 
 .btn:disabled {
@@ -240,7 +401,7 @@ input:focus-visible,
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #06251f;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -250,8 +411,8 @@ input:focus-visible,
 }
 
 .btn.danger {
-  background: rgba(247, 118, 142, 0.15);
-  border-color: rgba(247, 118, 142, 0.55);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
   color: var(--danger);
   font-weight: 600;
 }
@@ -266,8 +427,8 @@ input:focus-visible,
   padding: 7px 12px;
   font-size: 13px;
   color: var(--muted);
-  background: rgba(76, 194, 169, 0.07);
-  border-bottom: 1px solid rgba(76, 194, 169, 0.22);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-faint);
 }
 
 .hint kbd {
@@ -322,28 +483,28 @@ input:focus-visible,
 }
 
 .mode-normal {
-  color: #7aa2f7;
-  background: rgba(122, 162, 247, 0.15);
+  color: var(--info-bg);
+  background: var(--info-bg-soft);
 }
 
 .mode-insert {
-  color: #9ece6a;
-  background: rgba(158, 206, 106, 0.15);
+  color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .mode-visual {
-  color: #bb9af7;
-  background: rgba(187, 154, 247, 0.15);
+  color: var(--visual);
+  background: var(--visual-bg);
 }
 
 .mode-command {
-  color: #e0af68;
-  background: rgba(224, 175, 104, 0.15);
+  color: var(--warn);
+  background: var(--warn-bg);
 }
 
 .mode-replace {
-  color: #f7768e;
-  background: rgba(247, 118, 142, 0.15);
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 
 .mode-off {
@@ -360,7 +521,7 @@ input:focus-visible,
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 6, 9, 0.62);
+  background: var(--backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -376,7 +537,7 @@ input:focus-visible,
   max-width: 600px;
   max-height: 84vh;
   overflow: auto;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow);
 }
 
 .dialog-header {
@@ -456,7 +617,7 @@ input:focus-visible,
   padding: 9px 16px;
   font-size: 13px;
   z-index: 60;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow);
 }
 
 .toast.err {

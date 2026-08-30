@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { LANGUAGES } from '../detection/language'
 import type { LangId } from '../detection/language'
+import { THEMES } from '../theme/themes'
+import type { ThemeId } from '../theme/themes'
 
 export interface ToolbarProps {
   langId: LangId
@@ -9,6 +11,8 @@ export interface ToolbarProps {
   onLanguageChange: (id: LangId) => void
   vimEnabled: boolean
   onVimToggle: (enabled: boolean) => void
+  theme: ThemeId
+  onThemeChange: (theme: ThemeId) => void
   placeholderCount: number
   onPrevPlaceholder: () => void
   onNextPlaceholder: () => void
@@ -27,6 +31,8 @@ export function Toolbar(props: ToolbarProps) {
     onLanguageChange,
     vimEnabled,
     onVimToggle,
+    theme,
+    onThemeChange,
     placeholderCount,
     onPrevPlaceholder,
     onNextPlaceholder,
@@ -79,6 +85,19 @@ export function Toolbar(props: ToolbarProps) {
         />
         <span>Vim</span>
       </label>
+
+      <select
+        className="lang-select"
+        aria-label="颜色主题"
+        value={theme}
+        onChange={(e) => onThemeChange(e.target.value as ThemeId)}
+      >
+        {THEMES.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.label}
+          </option>
+        ))}
+      </select>
 
       <span className="ph-nav" role="group" aria-label="占位符导航">
         <span className="ph-count" title="待替换占位符数量">
