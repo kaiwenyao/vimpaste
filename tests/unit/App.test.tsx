@@ -36,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 async function openSettings(user: ReturnType<typeof userEvent.setup>) {
@@ -306,13 +307,16 @@ describe('粘贴历史', () => {
     expect(panel.textContent).toContain('curl -sfL https://get.k3s.io')
     expect(panel.querySelector('.history-row.active')).toBeNull()
 
-    // 点击恢复：编辑器内容与历史条目一致，条目高亮
+    // 点击恢复：编辑器内容与历史条目一致
     await user.click(within(panel).getByRole('button', { name: /^curl -sfL/ }))
     await waitFor(() => {
       expect(getDoc()).toBe(K3S)
     })
     expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
-    expect(panel.querySelector('.history-row.active')).not.toBeNull()
+    // jsdom 的 matchMedia 桩为窄视口行为：点击条目后抽屉自动收起，重新打开可见高亮
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    const reopened = screen.getByRole('dialog', { name: '粘贴历史' })
+    expect(reopened.querySelector('.history-row.active')).not.toBeNull()
   })
 
   it('复制时立即落盘历史（不等待防抖）', async () => {
@@ -497,4 +501,72 @@ describe('粘贴历史', () => {
       { timeout: 3000 },
     )
   }, 20_000)
+})
+
+describe('粘贴历史固定面板（宽视口）', () => {
+  /** jsdom 的 matchMedia 桩 matches 恒为 false（窄视口行为）；宽视口用例显式覆盖 */
+  function stubWideViewport() {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => {
+      void query
+      return {
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      } as unknown as MediaQueryList
+    })
+  }
+
+  it('面板默认固定展示（complementary 语义），点击条目保持打开并高亮，Esc 不关闭', async () => {
+    stubWideViewport()
+    const user = userEvent.setup()
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        {
+          id: 'a',
+          title: 'curl 命令',
+          content: 'curl example.com',
+          langId: 'shell',
+          createdAt: 1,
+          updatedAt: Date.now(),
+        },
+      ]),
+    )
+    render(<App />)
+
+    // 宽视口下面板默认展示，无需点击工具栏按钮
+    const panel = screen.getByRole('complementary', { name: '粘贴历史' })
+    expect(within(panel).getByRole('button', { name: /^curl 命令/ })).toBeInTheDocument()
+
+    // 点击条目：内容恢复，面板保持打开且条目高亮
+    await user.click(within(panel).getByRole('button', { name: /^curl 命令/ }))
+    await waitFor(() => {
+      expect(getDoc()).toBe('curl example.com')
+    })
+    expect(panel.querySelector('.history-row.active')).not.toBeNull()
+
+    // Esc 属于 Vim 按键，固定面板不响应
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+  })
+
+  it('工具栏按钮切换显隐并持久化（historyPanelOpen）', async () => {
+    stubWideViewport()
+    const user = userEvent.setup()
+    render(<App />)
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
+  })
 })

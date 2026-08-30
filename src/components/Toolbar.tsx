@@ -64,7 +64,6 @@ export function Toolbar(props: ToolbarProps) {
         className="btn icon"
         aria-label="历史记录"
         title="粘贴历史（保存在本浏览器）"
-        aria-haspopup="dialog"
         aria-expanded={historyOpen}
         onClick={onToggleHistory}
       >

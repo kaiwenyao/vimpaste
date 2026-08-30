@@ -4,11 +4,12 @@ import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../../src/storage/prefs'
 const KEY = 'vimpaste.prefs.v1'
 
 describe('prefs（非敏感偏好）', () => {
-  it('默认：Vim 键位、字号 14、提示未关闭、深色主题、历史开启', () => {
+  it('默认：Vim 键位、字号 14、提示未关闭、深色主题、历史开启、面板展示', () => {
     expect(loadPrefs()).toEqual(DEFAULT_PREFS)
     expect(DEFAULT_PREFS.editorMode).toBe('vim')
     expect(DEFAULT_PREFS.fontSize).toBe(14)
     expect(DEFAULT_PREFS.historyEnabled).toBe(true)
+    expect(DEFAULT_PREFS.historyPanelOpen).toBe(true)
   })
 
   it('保存后读取一致', () => {
@@ -18,6 +19,7 @@ describe('prefs（非敏感偏好）', () => {
       hintDismissed: true,
       theme: 'light',
       historyEnabled: false,
+      historyPanelOpen: false,
     })
     expect(loadPrefs()).toEqual({
       editorMode: 'emacs',
@@ -25,6 +27,7 @@ describe('prefs（非敏感偏好）', () => {
       hintDismissed: true,
       theme: 'light',
       historyEnabled: false,
+      historyPanelOpen: false,
     })
   })
 
@@ -51,6 +54,7 @@ describe('prefs（非敏感偏好）', () => {
       hintDismissed: false,
       theme: 'dark',
       historyEnabled: true,
+      historyPanelOpen: true,
     })
     expect(JSON.stringify(prefs)).not.toContain('secret')
   })
@@ -68,6 +72,7 @@ describe('prefs（非敏感偏好）', () => {
       hintDismissed: false,
       theme: 'dark',
       historyEnabled: true,
+      historyPanelOpen: true,
     })
   })
 
@@ -78,6 +83,7 @@ describe('prefs（非敏感偏好）', () => {
       hintDismissed: false,
       theme: 'contrast',
       historyEnabled: true,
+      historyPanelOpen: true,
     })
     const raw = localStorage.getItem(KEY) ?? ''
     expect(raw).toBe(
@@ -87,6 +93,7 @@ describe('prefs（非敏感偏好）', () => {
         hintDismissed: false,
         theme: 'contrast',
         historyEnabled: true,
+        historyPanelOpen: true,
       }),
     )
   })

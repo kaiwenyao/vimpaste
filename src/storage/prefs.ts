@@ -16,6 +16,8 @@ export interface Prefs {
   theme: ThemeId
   /** 粘贴历史开关（默认开启）；历史内容本身存放在 vimpaste.history.v1 */
   historyEnabled: boolean
+  /** 历史面板显隐（桌面固定面板默认展示；窄视口抽屉不自动弹出） */
+  historyPanelOpen: boolean
 }
 
 const STORAGE_KEY = 'vimpaste.prefs.v1'
@@ -26,6 +28,7 @@ export const DEFAULT_PREFS: Prefs = {
   hintDismissed: false,
   theme: DEFAULT_THEME,
   historyEnabled: true,
+  historyPanelOpen: true,
 }
 
 function sanitize(raw: unknown): Prefs {
@@ -48,6 +51,10 @@ function sanitize(raw: unknown): Prefs {
       typeof source.historyEnabled === 'boolean'
         ? source.historyEnabled
         : DEFAULT_PREFS.historyEnabled,
+    historyPanelOpen:
+      typeof source.historyPanelOpen === 'boolean'
+        ? source.historyPanelOpen
+        : DEFAULT_PREFS.historyPanelOpen,
   }
 }
 
