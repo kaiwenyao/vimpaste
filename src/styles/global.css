@@ -543,9 +543,17 @@ input:focus-visible,
 
 /* ---------- 编辑区 ---------- */
 
+/* 历史固定面板与编辑器并排的一行 */
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .editor-area {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
 }
 
@@ -730,8 +738,24 @@ input:focus-visible,
   color: var(--muted);
 }
 
-/* ---------- 粘贴历史侧栏 ---------- */
+/* ---------- 粘贴历史面板 ---------- */
 
+/* 公共骨架：列向 flex，内容滚动交给 .history-list */
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+/* 桌面端固定面板：参与布局，编辑器被挤到右侧，无遮罩 */
+.history-panel.docked {
+  flex: 0 0 300px;
+  width: 300px;
+}
+
+/* 窄视口抽屉：覆盖式弹出 */
 .history-backdrop {
   position: fixed;
   inset: 0;
@@ -739,16 +763,12 @@ input:focus-visible,
   z-index: 40;
 }
 
-.history-panel {
+.history-panel.drawer {
   position: fixed;
   top: 0;
   bottom: 0;
   left: 0;
   width: min(330px, 88vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
   box-shadow: var(--shadow);
   z-index: 41;
   animation: history-slide-in 0.16s ease;

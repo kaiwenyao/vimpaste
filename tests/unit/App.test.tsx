@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App'
@@ -36,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 async function openSettings(user: ReturnType<typeof userEvent.setup>) {
@@ -306,13 +307,16 @@ describe('粘贴历史', () => {
     expect(panel.textContent).toContain('curl -sfL https://get.k3s.io')
     expect(panel.querySelector('.history-row.active')).toBeNull()
 
-    // 点击恢复：编辑器内容与历史条目一致，条目高亮
+    // 点击恢复：编辑器内容与历史条目一致
     await user.click(within(panel).getByRole('button', { name: /^curl -sfL/ }))
     await waitFor(() => {
       expect(getDoc()).toBe(K3S)
     })
     expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
-    expect(panel.querySelector('.history-row.active')).not.toBeNull()
+    // jsdom 的 matchMedia 桩为窄视口行为：点击条目后抽屉自动收起，重新打开可见高亮
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    const reopened = screen.getByRole('dialog', { name: '粘贴历史' })
+    expect(reopened.querySelector('.history-row.active')).not.toBeNull()
   })
 
   it('复制时立即落盘历史（不等待防抖）', async () => {
@@ -497,4 +501,136 @@ describe('粘贴历史', () => {
       { timeout: 3000 },
     )
   }, 20_000)
+})
+
+describe('粘贴历史固定面板（宽视口）', () => {
+  /** jsdom 的 matchMedia 桩 matches 恒为 false（窄视口行为）；宽视口用例显式覆盖 */
+  function stubWideViewport() {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => {
+      void query
+      return {
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      } as unknown as MediaQueryList
+    })
+  }
+
+  it('面板默认固定展示（complementary 语义），点击条目保持打开并高亮，Esc 不关闭', async () => {
+    stubWideViewport()
+    const user = userEvent.setup()
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        {
+          id: 'a',
+          title: 'curl 命令',
+          content: 'curl example.com',
+          langId: 'shell',
+          createdAt: 1,
+          updatedAt: Date.now(),
+        },
+      ]),
+    )
+    render(<App />)
+
+    // 宽视口下面板默认展示，无需点击工具栏按钮
+    const panel = screen.getByRole('complementary', { name: '粘贴历史' })
+    expect(within(panel).getByRole('button', { name: /^curl 命令/ })).toBeInTheDocument()
+
+    // 点击条目：内容恢复，面板保持打开且条目高亮
+    await user.click(within(panel).getByRole('button', { name: /^curl 命令/ }))
+    await waitFor(() => {
+      expect(getDoc()).toBe('curl example.com')
+    })
+    expect(panel.querySelector('.history-row.active')).not.toBeNull()
+
+    // Esc 属于 Vim 按键，固定面板不响应
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+  })
+
+  it('工具栏按钮切换显隐并持久化（historyPanelOpen）', async () => {
+    stubWideViewport()
+    const user = userEvent.setup()
+    render(<App />)
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
+  })
+
+  it('窄视口抽屉开合是瞬态：打开与 Esc 关闭都不写 historyPanelOpen', async () => {
+    // jsdom 默认 matchMedia 桩即窄视口行为（matches 恒为 false）
+    const user = userEvent.setup()
+    // 模拟桌面端用户此前隐藏过面板
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        editorMode: 'vim',
+        fontSize: 14,
+        hintDismissed: true,
+        theme: 'dark',
+        historyEnabled: true,
+        historyPanelOpen: false,
+      }),
+    )
+    render(<App />)
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '历史记录' }))
+    expect(screen.getByRole('dialog', { name: '粘贴历史' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+    // 桌面端的隐藏偏好未被窄视口的开合覆盖
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
+  })
+
+  it('视口跨越断点时按偏好重同步显隐，且不写偏好', () => {
+    const listeners: Array<(e: MediaQueryListEvent) => void> = []
+    const raw = {
+      matches: true,
+      media: '(min-width: 768px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn((_: string, listener: (e: MediaQueryListEvent) => void) => {
+        listeners.push(listener)
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }
+    vi.spyOn(window, 'matchMedia').mockReturnValue(raw as unknown as MediaQueryList)
+    render(<App />)
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    // 拖窄：固定面板收起，抽屉也不自动弹出（不遮挡编辑器）
+    act(() => {
+      raw.matches = false
+      listeners.forEach((l) => l({ matches: false } as MediaQueryListEvent))
+    })
+    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
+
+    // 拖宽：按已存偏好恢复固定面板
+    act(() => {
+      raw.matches = true
+      listeners.forEach((l) => l({ matches: true } as MediaQueryListEvent))
+    })
+    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
+
+    // 全程只改瞬态，未覆盖偏好
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
+  })
 })

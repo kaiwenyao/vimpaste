@@ -21,6 +21,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 function renderPanel(overrides: Partial<Parameters<typeof HistoryPanel>[0]> = {}) {
   const props = {
     open: true,
+    variant: 'drawer' as const,
     entries: [entry()],
     enabled: true,
     activeId: null,
@@ -81,6 +82,7 @@ describe('HistoryPanel', () => {
     const { container } = render(
       <HistoryPanel
         open
+        variant="drawer"
         entries={[entry({ id: 'e1' }), entry({ id: 'e2' })]}
         enabled
         activeId="e2"
@@ -144,5 +146,36 @@ describe('HistoryPanel', () => {
   it('关闭状态（open=false）不渲染任何内容', () => {
     renderPanel({ open: false })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+
+describe('HistoryPanel 固定面板（docked）', () => {
+  it('以 complementary 语义渲染，无遮罩、无对话框角色', () => {
+    renderPanel({ variant: 'docked' })
+    const aside = screen.getByRole('complementary', { name: '粘贴历史' })
+    expect(aside).toBeInTheDocument()
+    expect(aside.classList.contains('docked')).toBe(true)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.querySelector('.history-backdrop')).toBeNull()
+    expect(screen.getByText('仅保存在本浏览器 · 不上传')).toBeInTheDocument()
+  })
+
+  it('不响应 Esc（Esc 属于 Vim 模式按键，不能被固定面板吞掉）', async () => {
+    const user = userEvent.setup()
+    const props = renderPanel({ variant: 'docked' })
+    await user.keyboard('{Escape}')
+    expect(props.onClose).not.toHaveBeenCalled()
+  })
+
+  it('「关闭历史面板」按钮仍触发 onClose（隐藏固定面板）', async () => {
+    const user = userEvent.setup()
+    const props = renderPanel({ variant: 'docked' })
+    await user.click(screen.getByRole('button', { name: '关闭历史面板' }))
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('展开时不抢占编辑器焦点（不自动聚焦搜索框）', () => {
+    renderPanel({ variant: 'docked' })
+    expect(screen.getByRole('textbox', { name: '搜索历史' })).not.toHaveFocus()
   })
 })

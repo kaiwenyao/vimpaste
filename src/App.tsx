@@ -28,7 +28,8 @@ const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
 const TOAST_MS = 2200
 const HISTORY_SAVE_DEBOUNCE_MS = 1500
-const NARROW_VIEWPORT_QUERY = '(max-width: 640px)'
+/** ≥ 该宽度时历史面板固定在编辑器左侧；更窄的视口退化为覆盖式抽屉 */
+const DOCKED_HISTORY_QUERY = '(min-width: 768px)'
 
 interface ToastState {
   text: string
@@ -62,7 +63,13 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory())
   const [historyEnabled, setHistoryEnabled] = useState(() => loadPrefs().historyEnabled)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  // 桌面宽视口默认固定展示；窄视口抽屉不自动弹出（避免一进页面就盖住编辑器）
+  const [historyOpen, setHistoryOpen] = useState(
+    () => loadPrefs().historyPanelOpen && window.matchMedia(DOCKED_HISTORY_QUERY).matches,
+  )
+  const [historyDocked, setHistoryDocked] = useState(
+    () => window.matchMedia(DOCKED_HISTORY_QUERY).matches,
+  )
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -80,6 +87,7 @@ export default function App() {
   const langIdRef = useRef(langId)
   const historyEnabledRef = useRef(historyEnabled)
   const activeEntryIdRef = useRef<string | null>(activeEntryId)
+  const historyDockedRef = useRef(historyDocked)
 
   useEffect(() => {
     historyRef.current = history
@@ -93,6 +101,21 @@ export default function App() {
   useEffect(() => {
     activeEntryIdRef.current = activeEntryId
   }, [activeEntryId])
+  useEffect(() => {
+    historyDockedRef.current = historyDocked
+  }, [historyDocked])
+
+  // 跟随视口宽度在「固定面板」与「抽屉」间切换。跨界时按已存偏好重同步瞬态显隐，
+  // 避免面板开着拖窄变成遮挡抽屉、或抽屉关着拖宽后面板不按偏好恢复（只改瞬态，不写偏好）
+  useEffect(() => {
+    const mq = window.matchMedia(DOCKED_HISTORY_QUERY)
+    const onChange = (e: MediaQueryListEvent) => {
+      setHistoryDocked(e.matches)
+      setHistoryOpen(loadPrefs().historyPanelOpen && e.matches)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const showToast = useCallback((text: string, kind: ToastState['kind']) => {
     window.clearTimeout(toastTimer.current)
@@ -125,8 +148,16 @@ export default function App() {
   }, [editorMode])
 
   // 持久化非敏感偏好（编辑内容只随粘贴历史功能保存在 vimpaste.history.v1）
+  // historyPanelOpen 只由用户显式切换时写入（见 setHistoryPanelOpen），避免窄视口加载时覆盖桌面端的展开偏好
   useEffect(() => {
-    savePrefs({ editorMode, fontSize, hintDismissed, theme, historyEnabled })
+    savePrefs({
+      ...loadPrefs(),
+      editorMode,
+      fontSize,
+      hintDismissed,
+      theme,
+      historyEnabled,
+    })
   }, [editorMode, fontSize, hintDismissed, theme, historyEnabled])
 
   // 颜色主题：同步到 <html data-theme>，样式全部由 CSS 变量驱动
@@ -233,9 +264,20 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', flush)
   }, [commitSnapshot])
 
-  const handleToggleHistory = useCallback(() => {
-    setHistoryOpen((open) => !open)
+  /** 固定面板的显式显隐切换：状态与偏好一起持久化（抽屉形态的开合走 setHistoryOpen，纯瞬态） */
+  const setHistoryPanelOpen = useCallback((next: boolean) => {
+    setHistoryOpen(next)
+    savePrefs({ ...loadPrefs(), historyPanelOpen: next })
   }, [])
+
+  const handleToggleHistory = useCallback(() => {
+    // 只有固定面板的切换落盘；窄视口抽屉是临时状态，不覆盖桌面端的展开偏好
+    if (historyDockedRef.current) {
+      setHistoryPanelOpen(!historyOpen)
+    } else {
+      setHistoryOpen(!historyOpen)
+    }
+  }, [historyOpen, setHistoryPanelOpen])
 
   /** 一次真实粘贴 = 一条新历史：粘贴时与当前条目解除关联（旧条目保留） */
   const handleEditorPaste = useCallback(() => {
@@ -258,7 +300,8 @@ export default function App() {
       setManualOverride(true)
       editorRef.current?.setDoc(entry.content)
       editorRef.current?.view.focus()
-      if (window.matchMedia(NARROW_VIEWPORT_QUERY).matches) setHistoryOpen(false)
+      // 抽屉形态下点击条目后自动收起；固定面板保持展示
+      if (!historyDockedRef.current) setHistoryOpen(false)
     },
     [commitSnapshot],
   )
@@ -300,7 +343,7 @@ export default function App() {
     if (contentRef.current.trim() !== '') commitSnapshot()
     editorRef.current?.setDoc('')
     editorRef.current?.view.focus()
-    if (window.matchMedia(NARROW_VIEWPORT_QUERY).matches) setHistoryOpen(false)
+    if (!historyDockedRef.current) setHistoryOpen(false)
   }, [commitSnapshot])
 
   const handleCopy = useCallback(async () => {
@@ -379,19 +422,37 @@ export default function App() {
         </div>
       )}
 
-      <main className="editor-area">
-        <CodeMirrorEditor
-          editorMode={editorMode}
-          onReady={handleReady}
-          callbacks={{
-            onDocChanged: handleDocChanged,
-            onCursor: (line, col) => setCursor({ line, col }),
-            onPlaceholderCount: setPlaceholderCount,
-            onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
-            onPaste: handleEditorPaste,
-          }}
-        />
-      </main>
+      <div className="app-body">
+        {historyOpen && historyDocked && (
+          <HistoryPanel
+            variant="docked"
+            open
+            entries={history}
+            enabled={historyEnabled}
+            activeId={activeEntryId}
+            onClose={() => setHistoryPanelOpen(false)}
+            onOpenEntry={handleOpenEntry}
+            onDeleteEntry={handleDeleteEntry}
+            onClearAll={handleClearHistory}
+            onToggleEnabled={handleHistoryEnabledChange}
+            onNewPaste={handleNewPaste}
+          />
+        )}
+
+        <main className="editor-area">
+          <CodeMirrorEditor
+            editorMode={editorMode}
+            onReady={handleReady}
+            callbacks={{
+              onDocChanged: handleDocChanged,
+              onCursor: (line, col) => setCursor({ line, col }),
+              onPlaceholderCount: setPlaceholderCount,
+              onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
+              onPaste: handleEditorPaste,
+            }}
+          />
+        </main>
+      </div>
 
       <StatusBar
         editorMode={editorMode}
@@ -415,12 +476,14 @@ export default function App() {
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
-      {historyOpen && (
+      {historyOpen && !historyDocked && (
         <HistoryPanel
+          variant="drawer"
           open
           entries={history}
           enabled={historyEnabled}
           activeId={activeEntryId}
+          // 抽屉的 Esc / 遮罩 / ✕ 关闭都只改瞬态，不写 historyPanelOpen
           onClose={() => setHistoryOpen(false)}
           onOpenEntry={handleOpenEntry}
           onDeleteEntry={handleDeleteEntry}
