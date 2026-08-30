@@ -9,7 +9,7 @@ import { tags as t } from '@lezer/highlight'
 export const vimpasteTheme = EditorView.theme({
   '&': {
     height: '100%',
-    fontSize: '13.5px',
+    fontSize: 'var(--editor-font-size, 14px)',
     backgroundColor: 'var(--bg-editor)',
     color: 'var(--text)',
   },

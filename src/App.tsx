@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CodeMirrorEditor } from './components/CodeMirrorEditor'
 import { HelpDialog } from './components/HelpDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import type { LangId } from './detection/language'
 import { detectLanguage, languageLabel } from './detection/language'
-import { jumpToPlaceholder } from './editor/navigation'
 import type { EditorApi } from './editor/createEditor'
+import { isEditorMode, normalizeFontSize } from './editor/editorMode'
+import type { EditorMode } from './editor/editorMode'
+import { jumpToPlaceholder } from './editor/navigation'
 import { loadPrefs, savePrefs } from './storage/prefs'
-import { copyText } from './utils/clipboard'
 import { isThemeId } from './theme/themes'
 import type { ThemeId } from './theme/themes'
+import { copyText } from './utils/clipboard'
 
 const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
@@ -42,10 +45,12 @@ export default function App() {
   const [manualOverride, setManualOverride] = useState(false)
   const [placeholderCount, setPlaceholderCount] = useState(0)
   const [cursor, setCursor] = useState({ line: 1, col: 1 })
-  const [vimEnabled, setVimEnabled] = useState(() => loadPrefs().vimEnabled)
+  const [editorMode, setEditorMode] = useState<EditorMode>(() => loadPrefs().editorMode)
+  const [fontSize, setFontSize] = useState<number>(() => loadPrefs().fontSize)
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
   const [vimMode, setVimMode] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
@@ -79,20 +84,21 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [content, manualOverride])
 
-  // 应用 Vim 开关并持久化（仅保存非敏感偏好，绝不保存编辑内容）
+  // 应用编辑器键位模式并持久化（仅保存非敏感偏好，绝不保存编辑内容）
   useEffect(() => {
-    editorRef.current?.setVim(vimEnabled)
-    savePrefs({ vimEnabled, hintDismissed, theme })
-  }, [vimEnabled, hintDismissed, theme])
+    editorRef.current?.setEditorMode(editorMode)
+    savePrefs({ editorMode, fontSize, hintDismissed, theme })
+  }, [editorMode, fontSize, hintDismissed, theme])
 
   // 颜色主题：同步到 <html data-theme>，样式全部由 CSS 变量驱动
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // 字体大小：通过 CSS 变量即时生效
   useEffect(() => {
-    void editorRef.current?.setLanguage(langId)
-  }, [langId])
+    document.documentElement.style.setProperty('--editor-font-size', `${fontSize}px`)
+  }, [fontSize])
 
   const handleReady = useCallback((api: EditorApi) => {
     editorRef.current = api
@@ -124,9 +130,12 @@ export default function App() {
     setManualOverride(true)
   }, [])
 
-  const handleVimToggle = useCallback((enabled: boolean) => {
-    setVimEnabled(enabled)
-    if (!enabled) setVimMode(null)
+  const handleEditorModeChange = useCallback((mode: EditorMode) => {
+    if (isEditorMode(mode)) setEditorMode(mode)
+  }, [])
+
+  const handleFontSizeChange = useCallback((size: number) => {
+    setFontSize(normalizeFontSize(size))
   }, [])
 
   const handleThemeChange = useCallback((next: ThemeId) => {
@@ -164,10 +173,9 @@ export default function App() {
         langAuto={!manualOverride}
         manualOverride={manualOverride}
         onLanguageChange={handleLanguageChange}
-        vimEnabled={vimEnabled}
-        onVimToggle={handleVimToggle}
         theme={theme}
         onThemeChange={handleThemeChange}
+        onOpenSettings={() => setSettingsOpen(true)}
         placeholderCount={placeholderCount}
         onPrevPlaceholder={() => jump(-1)}
         onNextPlaceholder={() => jump(1)}
@@ -209,7 +217,7 @@ export default function App() {
 
       <main className="editor-area">
         <CodeMirrorEditor
-          vimEnabled={vimEnabled}
+          editorMode={editorMode}
           onReady={handleReady}
           callbacks={{
             onDocChanged: handleDocChanged,
@@ -221,12 +229,23 @@ export default function App() {
       </main>
 
       <StatusBar
-        vimEnabled={vimEnabled}
+        editorMode={editorMode}
         vimMode={vimMode}
         line={cursor.line}
         col={cursor.col}
         langLabel={languageLabel(langId)}
         chars={content.length}
+      />
+
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        editorMode={editorMode}
+        onEditorModeChange={handleEditorModeChange}
+        fontSize={fontSize}
+        onFontSizeChange={handleFontSizeChange}
+        theme={theme}
+        onThemeChange={handleThemeChange}
       />
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />

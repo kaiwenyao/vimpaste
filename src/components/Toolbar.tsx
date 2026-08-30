@@ -9,10 +9,9 @@ export interface ToolbarProps {
   langAuto: boolean
   manualOverride: boolean
   onLanguageChange: (id: LangId) => void
-  vimEnabled: boolean
-  onVimToggle: (enabled: boolean) => void
   theme: ThemeId
   onThemeChange: (theme: ThemeId) => void
+  onOpenSettings: () => void
   placeholderCount: number
   onPrevPlaceholder: () => void
   onNextPlaceholder: () => void
@@ -29,10 +28,9 @@ export function Toolbar(props: ToolbarProps) {
     langAuto,
     manualOverride,
     onLanguageChange,
-    vimEnabled,
-    onVimToggle,
     theme,
     onThemeChange,
+    onOpenSettings,
     placeholderCount,
     onPrevPlaceholder,
     onNextPlaceholder,
@@ -75,16 +73,15 @@ export function Toolbar(props: ToolbarProps) {
         </span>
       </span>
 
-      <label className="vim-toggle">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Vim 模式"
-          checked={vimEnabled}
-          onChange={(e) => onVimToggle(e.target.checked)}
-        />
-        <span>Vim</span>
-      </label>
+      <button
+        type="button"
+        className="btn icon"
+        aria-label="设置"
+        title="编辑器设置（键位、字体大小、主题）"
+        onClick={onOpenSettings}
+      >
+        ⚙
+      </button>
 
       <select
         className="lang-select"

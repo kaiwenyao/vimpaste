@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { createEditor } from '../editor/createEditor'
 import type { EditorCallbacks } from '../editor/createEditor'
+import type { EditorMode } from '../editor/editorMode'
 
 interface CodeMirrorEditorProps {
-  vimEnabled: boolean
+  editorMode: EditorMode
   onReady: (api: ReturnType<typeof createEditor>) => void
   callbacks: EditorCallbacks
 }
 
-export function CodeMirrorEditor({ vimEnabled, onReady, callbacks }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({ editorMode, onReady, callbacks }: CodeMirrorEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const callbacksRef = useRef(callbacks)
   const onReadyRef = useRef(onReady)
-  const [initialVim] = useState(vimEnabled)
+  const [initialMode] = useState(editorMode)
 
   useEffect(() => {
     callbacksRef.current = callbacks
@@ -30,11 +31,11 @@ export function CodeMirrorEditor({ vimEnabled, onReady, callbacks }: CodeMirrorE
         onPlaceholderCount: (n) => callbacksRef.current.onPlaceholderCount(n),
         onVimMode: (m) => callbacksRef.current.onVimMode(m),
       },
-      { vim: initialVim },
+      { editorMode: initialMode },
     )
     onReadyRef.current(api)
     return () => api.destroy()
-  }, [initialVim])
+  }, [initialMode])
 
   return <div className="editor-host" ref={hostRef} />
 }
