@@ -27,6 +27,8 @@ export interface EditorCallbacks {
   onCursor(line: number, col: number): void
   onPlaceholderCount(count: number): void
   onVimMode(mode: string | null): void
+  /** 用户向编辑器粘贴内容（用于粘贴历史：一次粘贴视为新的条目） */
+  onPaste?(): void
 }
 
 export interface EditorApi {
@@ -89,6 +91,12 @@ export function createEditor(
     vimpasteTheme,
     vimpasteSyntax,
     updateListener,
+    EditorView.domEventHandlers({
+      paste: () => {
+        callbacks.onPaste?.()
+        return false
+      },
+    }),
     modeCompartment.of(editorModeExtensions(options.editorMode)),
     languageCompartment.of([]),
     keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap]),

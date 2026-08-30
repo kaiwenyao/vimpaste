@@ -47,6 +47,10 @@ export function languageLabel(id: LangId): string {
   return LANGUAGES.find((l) => l.id === id)?.label ?? '纯文本'
 }
 
+export function isLangId(value: unknown): value is LangId {
+  return typeof value === 'string' && LANGUAGES.some((l) => l.id === value)
+}
+
 const SHELL_COMMANDS =
   /\b(?:curl|wget|sudo|apt|apt-get|yum|dnf|brew|git|docker|kubectl|helm|systemctl|service|journalctl|ssh|scp|rsync|tar|gzip|gunzip|chmod|chown|export|source|cd|ls|cp|mv|rm|mkdir|touch|cat|echo|grep|sed|awk|find|xargs|env|printenv|alias|which|ping|ifconfig|ip|netstat|nc|df|du|ps|kill|head|tail|less|nano|bash|sh|zsh|make|cargo|npm|pnpm|yarn|pip3?|python3?|uname|reboot|mount|swapon)\b/
 
