@@ -84,9 +84,13 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [content, manualOverride])
 
-  // 应用编辑器键位模式并持久化（仅保存非敏感偏好，绝不保存编辑内容）
+  // 应用编辑器键位模式到编辑器实例（编辑器内部对未变化的 mode 提前返回）
   useEffect(() => {
     editorRef.current?.setEditorMode(editorMode)
+  }, [editorMode])
+
+  // 持久化非敏感偏好（绝不保存编辑内容）
+  useEffect(() => {
     savePrefs({ editorMode, fontSize, hintDismissed, theme })
   }, [editorMode, fontSize, hintDismissed, theme])
 

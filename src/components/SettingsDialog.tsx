@@ -71,7 +71,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <section className="settings-section">
         <h3 id="settings-theme-label">颜色主题</h3>
         <select
-          className="lang-select"
+          className="select"
           aria-labelledby="settings-theme-label"
           value={theme}
           onChange={(e) => onThemeChange(e.target.value as ThemeId)}

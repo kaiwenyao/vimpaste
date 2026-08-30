@@ -103,9 +103,13 @@ export function createEditor(
     attachVimModeTracking(view, callbacks.onVimMode)
   }
 
+  let currentMode: EditorMode = options.editorMode
+
   return {
     view,
     setEditorMode(mode) {
+      if (mode === currentMode) return
+      currentMode = mode
       view.dispatch({ effects: modeCompartment.reconfigure(editorModeExtensions(mode)) })
       if (mode === 'vim') {
         attachVimModeTracking(view, callbacks.onVimMode)

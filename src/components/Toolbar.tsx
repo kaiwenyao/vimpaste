@@ -57,7 +57,7 @@ export function Toolbar(props: ToolbarProps) {
 
       <span className="lang-wrap">
         <select
-          className="lang-select"
+          className="select"
           aria-label="语言"
           value={langId}
           onChange={(e) => onLanguageChange(e.target.value as LangId)}
@@ -84,7 +84,7 @@ export function Toolbar(props: ToolbarProps) {
       </button>
 
       <select
-        className="lang-select"
+        className="select"
         aria-label="颜色主题"
         value={theme}
         onChange={(e) => onThemeChange(e.target.value as ThemeId)}

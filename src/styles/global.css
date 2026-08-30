@@ -268,7 +268,7 @@ input:focus-visible,
   gap: 6px;
 }
 
-.lang-select {
+.select {
   background: var(--bg-control);
   color: var(--text);
   border: 1px solid var(--border);
@@ -603,6 +603,11 @@ input:focus-visible,
   background: var(--danger-bg);
 }
 
+.mode-emacs {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .mode-off {
   color: var(--muted-2);
   background: var(--bg-control);
@@ -737,7 +742,7 @@ input:focus-visible,
     display: none;
   }
 
-  .lang-select {
+  .select {
     max-width: 130px;
   }
 

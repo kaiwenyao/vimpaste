@@ -62,7 +62,14 @@ export function currentVimMode(cm: unknown): VimModeLabel {
   return 'NORMAL'
 }
 
-/** 在视图上挂接模式变化事件；vim 关闭时回调 null */
+/**
+ * 已挂接模式跟踪的视图 → 上次挂接的 facade。
+ * facade.on 只追加不去重：同一 facade 重复挂接会累积监听器；
+ * 而 compartment 移除 vim 后重建的是全新 facade（旧监听随旧插件销毁），需重新挂接。
+ */
+const trackedFacades = new WeakMap<EditorView, VimFacade>()
+
+/** 在视图上挂接模式变化事件；vim 关闭时回调 null。同一 facade 重复挂接是幂等的。 */
 export function attachVimModeTracking(
   view: EditorView,
   onMode: (mode: string | null) => void,
@@ -70,6 +77,8 @@ export function attachVimModeTracking(
   const cm = getCM(view)
   if (!cm) return
   const facade = cm as unknown as VimFacade
+  if (trackedFacades.get(view) === facade) return
+  trackedFacades.set(view, facade)
   const report = () => onMode(currentVimMode(facade))
   facade.on('vim-mode-change', report)
   facade.on('dialog', report)
