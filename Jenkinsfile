@@ -2,14 +2,16 @@
 // VimPaste 持续集成流水线（测试 + 构建 + 镜像推送）
 // =============================================================================
 // 运行形态与 firmament 项目一致：每次构建由 Jenkins Kubernetes 插件在集群里
-// 临时创建一个 Pod 作为构建代理，构建结束后 Pod 销毁。Pod 里有两个业务容器：
+// 临时创建一个 Pod 作为构建代理，构建结束后 Pod 销毁。Pod 里有三个业务容器：
 //
 //   nodejs —— 代码检查、单元测试、前端构建（内含 Node.js 24）
 //   docker —— 构建并推送镜像（内含 docker CLI）
+//   gitops —— Git 操作与修改 YAML（内含 git 和 yq）
 //
 // 插件还会自动注入一个 jnlp 容器负责和 Jenkins master 通信，无需在此声明。
-// 流水线的每个 steps 默认落在 jnlp 容器里，所以凡是要用 nodejs 或 docker 的
-// 步骤，都必须用 container('nodejs') / container('docker') 显式切换。
+// 流水线的每个 steps 默认落在 jnlp 容器里，所以凡是要用 nodejs、docker 或
+// gitops 的步骤，都必须用 container('nodejs') / container('docker') /
+// container('gitops') 显式切换。
 //
 // 与 firmament 的差异：本项目只做测试与构建，没有部署阶段；镜像推送到
 // GitHub Container Registry（ghcr.io），标签只打 commit 短 SHA，不打 latest，
@@ -65,6 +67,22 @@ spec:
         - mountPath: /var/run/docker.sock
           name: docker-sock
 
+    # -------------------------------------------------------
+    # 容器三：gitops —— Git 操作与修改 YAML
+    # -------------------------------------------------------
+    # 基础 alpine 镜像，启动时现场安装 git 和 yq。它只做 Git 操作和改
+    # YAML（GitOps），不需要操作 Docker 守护进程，因此不挂载
+    # /var/run/docker.sock。
+    - name: gitops
+      image: alpine:3.22
+      command:
+        - sh
+        - -c
+      args:
+        - apk add --no-cache git yq ca-certificates && sleep 9999999
+      tty: true
+      workingDir: /home/jenkins/agent
+
   # -------------------------------------------------------
   # 卷定义
   # -------------------------------------------------------
@@ -79,6 +97,17 @@ spec:
     }
 
     stages {
+        // 临时 stage：验证 gitops 容器真的可用（git / yq 装好了），后续
+        // GitOps 步骤落地后即删除。
+        stage('0. 验证 GitOps 工具') {
+            steps {
+                container('gitops') {
+                    sh 'git --version'
+                    sh 'yq --version'
+                }
+            }
+        }
+
         stage('1. 拉取代码') {
             steps {
                 checkout scm
