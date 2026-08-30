@@ -63,6 +63,38 @@ test.describe('K3s 核心验收流程', () => {
     expect(external).toEqual([])
   })
 
+  test('环境变量赋值的占位值（export API_KEY="你的 API Key"）识别、跳转与替换', async ({
+    page,
+  }) => {
+    const DOC = [
+      'export API_KEY="你的 API Key"',
+      'export BASE_URL="https://api.deepseek.com"',
+      'python chatbot.py',
+    ].join('\n')
+    await page.goto('/')
+    await setDoc(page, DOC)
+    await setSel(page, 0)
+
+    // 1. 占位值被标记（真实值 BASE_URL 不标记），计数为 1
+    await expect(page.getByText('1 个待替换')).toBeVisible()
+    const deco = page.locator('.cm-vp-placeholder').filter({ hasText: '你的 API Key' })
+    await expect(deco).toHaveCount(1)
+
+    // 2. ]v 选中值本身，按 c 输入真实值完成替换
+    await page.keyboard.press(']')
+    await page.keyboard.press('v')
+    const sel = await getSelection(page)
+    expect(DOC.slice(sel.anchor, sel.head)).toBe('你的 API Key')
+
+    await page.keyboard.press('c')
+    await page.keyboard.insertText('sk-real-key')
+    await page.keyboard.press('Escape')
+
+    // 3. 其余内容（引号、BASE_URL、命令行）逐字不变
+    expect(await getDoc(page)).toBe(DOC.replace('你的 API Key', 'sk-real-key'))
+    await expect(page.getByText('0 个待替换')).toBeVisible()
+  })
+
   test('状态栏光标与字符数随内容更新', async ({ page }) => {
     await page.goto('/')
     await setDoc(page, K3S)

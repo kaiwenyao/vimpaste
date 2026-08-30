@@ -49,6 +49,61 @@ describe('findPlaceholders', () => {
     expect(texts('echo $YOUR_TOKEN extra')).toEqual(['$YOUR_TOKEN'])
   })
 
+  it('环境变量赋值：值是占位内容时标记值本身（DeepSeek 样例）', () => {
+    const text = [
+      'export API_KEY="你的 API Key"',
+      'export BASE_URL="https://api.deepseek.com"',
+      'python chatbot.py',
+    ].join('\n')
+    const matches = findPlaceholders(text)
+    expect(matches.map((m) => m.text)).toEqual(['你的 API Key'])
+    expect(matches[0].kind).toBe('env')
+    expect(text.slice(matches[0].start, matches[0].end)).toBe('你的 API Key')
+  })
+
+  it('环境变量赋值：无 export 前缀、中文、引号内外与常见占位值', () => {
+    expect(texts('API_KEY="你的 Key"')).toEqual(['你的 Key'])
+    expect(texts('TOKEN=你的APIKey')).toEqual(['你的APIKey'])
+    expect(texts("export DB_PASSWORD='在此填写密码'")).toEqual(['在此填写密码'])
+    expect(texts('export DEEPSEEK_API_KEY=sk-xxx')).toEqual(['sk-xxx'])
+    expect(texts('export OPENAI_API_KEY=<your-api-key>')).toEqual(['<your-api-key>'])
+    expect(texts('export AUTH_TOKEN=...')).toEqual(['...'])
+  })
+
+  it('环境变量赋值：行中 export 与命令前缀形式', () => {
+    expect(texts('cd /app && export API_KEY="你的 API Key" && python chatbot.py')).toEqual([
+      '你的 API Key',
+    ])
+    expect(texts('FOO="你的 Key" python chatbot.py')).toEqual(['你的 Key'])
+  })
+
+  it('环境变量赋值：密钥类变量空值连引号标记，普通变量不标记', () => {
+    expect(texts('export DEEPSEEK_API_KEY=""')).toEqual(['""'])
+    expect(texts("export GITHUB_TOKEN=''")).toEqual(["''"])
+    expect(texts('export DEBUG=""')).toEqual([])
+    // 非空 CJK 值一律视为占位（设计上允许此类误判，见 placeholders.ts）
+    expect(texts('export GREETING="你好"')).toEqual(['你好'])
+  })
+
+  it('环境变量赋值：$ 引用与小写变量名不标记', () => {
+    expect(texts('export TOKEN=$MY_TOKEN')).toEqual([])
+    expect(texts('export api_key="你的 key"')).toEqual([])
+  })
+
+  it('环境变量赋值：真实值不标记，已有占位符不重复标记', () => {
+    expect(texts('export BASE_URL="https://api.deepseek.com"')).toEqual([])
+    expect(texts('export NODE_ENV=production')).toEqual([])
+    expect(texts("K3S_TOKEN='abc' sh -s -")).toEqual([])
+    expect(texts("curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_TOKEN' sh -s -")).toEqual([
+      'YOUR_TOKEN',
+    ])
+  })
+
+  it('环境变量赋值：多个赋值分别计数且按位置排序', () => {
+    const text = 'export API_KEY="你的"\necho YOUR_TOKEN\nexport FLAG=xxx'
+    expect(texts(text)).toEqual(['你的', 'YOUR_TOKEN', 'xxx'])
+  })
+
   it('误判边界：普通变量与常用符号不标记', () => {
     expect(texts('export PATH=$PATH:/usr/local/bin')).toEqual([])
     expect(texts("K3S_TOKEN='abc' sh -s -")).toEqual([])
