@@ -227,10 +227,9 @@ EOF
 
                             echo "新镜像: $NEW_IMAGE"
 
-                            yq -i '
-                              (.spec.template.spec.containers[] |
-                               select(.name == "vimpaste").image) = strenv(NEW_IMAGE)
-                            ' gitops-repo/apps/vimpaste/deployment.yaml
+                            sed -i \
+                              "s#image: ghcr.io/kaiwenyao/vimpaste:.*#image: ${NEW_IMAGE}#" \
+                              gitops-repo/apps/vimpaste/deployment.yaml
 
                             git -C gitops-repo diff -- apps/vimpaste/deployment.yaml
 
