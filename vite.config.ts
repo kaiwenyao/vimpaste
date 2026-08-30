@@ -40,8 +40,10 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'script-defer',
+      // prompt 模式：新版本就绪时由应用显示「发现新版本」提示条，
+      // 用户点击后才激活——编辑器内容不会被自动刷新丢掉。
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'VimPaste — 支持 Vim 的临时代码编辑器',

@@ -14,7 +14,8 @@ if (!existsSync(dist)) {
   process.exit(1)
 }
 
-const required = ['index.html', 'manifest.webmanifest', 'registerSW.js', 'favicon.svg']
+// registerSW 逻辑已打包进入口 JS（injectRegister: null），不再单独产出 registerSW.js
+const required = ['index.html', 'manifest.webmanifest', 'sw.js', 'favicon.svg']
 for (const f of required) {
   if (!existsSync(path.join(dist, f))) {
     console.error(`构建产物缺少 ${f}`)

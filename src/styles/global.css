@@ -445,6 +445,20 @@ input:focus-visible,
   padding: 2px 8px;
 }
 
+/* ---------- 新版本提示 ---------- */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn);
+}
+
 /* ---------- 编辑区 ---------- */
 
 .editor-area {

@@ -96,6 +96,22 @@ describe('App 基础渲染与可访问性', () => {
     await user.click(screen.getByRole('button', { name: '关闭帮助' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('Service Worker 新版本就绪时显示提示条，点击立即刷新', async () => {
+    const user = userEvent.setup()
+    const applyUpdate = vi.fn().mockResolvedValue(undefined)
+    window.__vimpasteApplyUpdate = applyUpdate
+    render(<App />)
+    expect(screen.queryByRole('button', { name: '立即刷新' })).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent('vimpaste:update-ready'))
+    const banner = await screen.findByRole('status')
+    expect(banner).toHaveTextContent('发现新版本')
+    await user.click(screen.getByRole('button', { name: '立即刷新' }))
+    expect(applyUpdate).toHaveBeenCalledTimes(1)
+    expect(applyUpdate).toHaveBeenCalledWith(true)
+    delete window.__vimpasteApplyUpdate
+  })
 })
 
 describe('编辑内容与占位符', () => {
