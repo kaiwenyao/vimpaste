@@ -1,0 +1,17 @@
+# 镜像构建上下文里不需要的内容（依赖与产物在容器内重新生成）
+node_modules
+dist
+dev-dist
+.git
+.github
+.vite
+coverage
+playwright-report
+test-results
+blob-report
+e2e
+docs
+.DS_Store
+*.log
+*.local
+*.tsbuildinfo
