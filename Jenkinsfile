@@ -183,9 +183,9 @@ spec:
             }
         }
 
-        // 本地验证 GitOps 改单流程：用 yq 把镜像改成本次 commit 的镜像并查看
-        // diff；暂时不 commit、不 push 到 k3s-home。
-        stage('5. 更新 GitOps 清单（本地验证）') {
+        // GitOps 落地：把 k3s-home 中 vimpaste 的镜像更新为本次构建的镜像，
+        // 并直接 commit + push 到 k3s-home main；清单已是当前镜像时跳过。
+        stage('5. 更新 GitOps 清单') {
             when {
                 branch 'main'
             }
@@ -200,6 +200,8 @@ spec:
                         )
                     ]) {
                         sh '''
+                            set -eu
+
                             rm -rf gitops-repo
 
                             cat > /tmp/git-askpass.sh <<'EOF'
@@ -209,7 +211,9 @@ case "$1" in
   *Password*) echo "$GITOPS_TOKEN" ;;
 esac
 EOF
+
                             chmod 700 /tmp/git-askpass.sh
+                            trap 'rm -f /tmp/git-askpass.sh' EXIT
 
                             GIT_ASKPASS=/tmp/git-askpass.sh \
                             GIT_TERMINAL_PROMPT=0 \
@@ -223,17 +227,27 @@ EOF
                             git config --global --add safe.directory "$(pwd)" || true
 
                             NEW_IMAGE="ghcr.io/kaiwenyao/vimpaste:$(git rev-parse --short HEAD)"
-                            export NEW_IMAGE
 
-                            echo "新镜像: $NEW_IMAGE"
+                            echo "部署镜像: $NEW_IMAGE"
 
                             sed -i \
                               "s#image: ghcr.io/kaiwenyao/vimpaste:.*#image: ${NEW_IMAGE}#" \
                               gitops-repo/apps/vimpaste/deployment.yaml
 
-                            git -C gitops-repo diff -- apps/vimpaste/deployment.yaml
+                            if git -C gitops-repo diff --quiet -- apps/vimpaste/deployment.yaml; then
+                                echo "GitOps 清单已经是当前镜像，无需更新"
+                                exit 0
+                            fi
 
-                            rm -f /tmp/git-askpass.sh
+                            git -C gitops-repo config user.name "Jenkins"
+                            git -C gitops-repo config user.email "jenkins@vimpaste.local"
+
+                            git -C gitops-repo add apps/vimpaste/deployment.yaml
+                            git -C gitops-repo commit -m "deploy(vimpaste): ${NEW_IMAGE##*:}"
+
+                            GIT_ASKPASS=/tmp/git-askpass.sh \
+                            GIT_TERMINAL_PROMPT=0 \
+                            git -C gitops-repo push origin main
                         '''
                     }
                 }
