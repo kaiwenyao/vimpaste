@@ -121,11 +121,12 @@ spec:
             steps {
                 container('docker') {
                     script {
-                        // GitHub Container Registry 登录凭据（Jenkins 端为
-                        // usernamePassword 类型，ID 必须是 ghcr-credentials）：
-                        //   用户名 = GitHub 用户名
-                        //   密码   = 具有 write:packages 权限的 Personal Access Token
-                        withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
+                        // GitHub Container Registry 登录凭据：复用凭据库中已有的
+                        // github-token（usernamePassword 类型，用户名 kaiwenyao）。
+                        // 注意：令牌需带 write:packages 权限（classic PAT 勾选
+                        // write:packages；fine-grained 需对本仓库授予
+                        // GitHub Packages 读写），否则推送 ghcr 会 403。
+                        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
                             // 工作区目录的属主与本容器内的当前用户不一致时，Git 会以
                             // "dubious ownership" 为由拒绝操作。把目录标记为可信来放行，
                             // 好让下面能读到 commit 号用作镜像标签。
