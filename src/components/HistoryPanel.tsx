@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { languageLabel } from '../detection/language'
 import type { HistoryEntry } from '../storage/history'
 import { formatRelativeTime, historyGroupLabel } from '../utils/time'
+import { IconClose } from './icons'
 export interface HistoryPanelProps {
   open: boolean
   /** docked：桌面端固定在左侧、参与布局；drawer：窄视口下覆盖式弹出抽屉 */
@@ -105,8 +106,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
       <header className="history-header">
         <h2 className="history-title">历史记录</h2>
         <span className="history-count">{entries.length} 条</span>
-        <button type="button" className="btn ghost" aria-label="关闭历史面板" onClick={onClose}>
-          ✕
+        <button
+          type="button"
+          className="btn ghost icon"
+          aria-label="关闭历史面板"
+          onClick={onClose}
+        >
+          <IconClose size={13} />
         </button>
       </header>
 
@@ -177,7 +183,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                         aria-label={`删除「${entry.title}」`}
                         onClick={() => onDeleteEntry(entry.id)}
                       >
-                        ×
+                        <IconClose size={12} />
                       </button>
                     </li>
                   ))}

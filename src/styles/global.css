@@ -64,6 +64,7 @@
   --font-mono:
     ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --editor-font-size: 14px;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b97a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 [data-theme='light'] {
@@ -123,6 +124,7 @@
   --syn-link: #0e7490;
   --syn-heading: #9a6700;
   --syn-invalid: #c5304b;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2355636f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 [data-theme='contrast'] {
@@ -182,6 +184,7 @@
   --syn-link: #6ee7ff;
   --syn-heading: #ffd166;
   --syn-invalid: #ff8aa0;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c9cfd6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 * {
@@ -227,6 +230,19 @@ input:focus-visible,
   outline-offset: 2px;
 }
 
+/* 主题切换时表面颜色平滑过渡（body 背景需即时切换，见 theme e2e 断言） */
+.toolbar,
+.statusbar,
+.history-panel,
+.dialog,
+.hint,
+.update-banner {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
 /* ---------- 工具栏 ---------- */
 
 .toolbar {
@@ -255,6 +271,23 @@ input:focus-visible,
   border-radius: 5px;
   padding: 3px 6px;
   letter-spacing: -1px;
+  display: inline-flex;
+}
+
+/* 终端光标闪烁，点题 Vim/命令行的品牌细节 */
+.brand-cursor {
+  animation: cursor-blink 1.15s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .brand-name {
@@ -269,13 +302,25 @@ input:focus-visible,
 }
 
 .select {
+  appearance: none;
   background: var(--bg-control);
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 5px 24px 5px 8px;
   font-size: 13px;
   cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.select:hover {
+  border-color: var(--control-hover-border);
+  background-color: var(--control-hover-bg);
 }
 
 .lang-badge {
@@ -377,12 +422,17 @@ input:focus-visible,
   cursor: pointer;
   transition:
     background 0.12s ease,
-    border-color 0.12s ease;
+    border-color 0.12s ease,
+    transform 0.08s ease;
 }
 
 .btn:hover:not(:disabled) {
   border-color: var(--control-hover-border);
   background: var(--control-hover-bg);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .btn:disabled {
@@ -397,6 +447,9 @@ input:focus-visible,
 .btn.icon {
   padding: 5px 9px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn.primary {
@@ -438,6 +491,7 @@ input:focus-visible,
   color: var(--accent-strong);
   background: var(--bg-control);
   border: 1px solid var(--border);
+  border-bottom-width: 2px;
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -636,6 +690,16 @@ input:focus-visible,
   justify-content: center;
   padding: 16px;
   z-index: 50;
+  animation: fade-in 0.14s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .dialog {
@@ -647,6 +711,18 @@ input:focus-visible,
   max-height: 84vh;
   overflow: auto;
   box-shadow: var(--shadow);
+  animation: dialog-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes dialog-in {
+  from {
+    transform: translateY(8px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 .dialog-header {
@@ -691,6 +767,7 @@ input:focus-visible,
   color: var(--accent-strong);
   background: var(--bg-control);
   border: 1px solid var(--border);
+  border-bottom-width: 2px;
   border-radius: 4px;
   padding: 1px 7px;
   white-space: nowrap;
@@ -727,6 +804,18 @@ input:focus-visible,
   font-size: 13px;
   z-index: 60;
   box-shadow: var(--shadow);
+  animation: toast-in 0.18s ease;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translate(-50%, 8px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
 }
 
 .toast.err {
@@ -883,6 +972,29 @@ input:focus-visible,
   color: var(--muted-2);
 }
 
+/* 细滚动条：历史列表与对话框 */
+.history-list,
+.dialog {
+  scrollbar-width: thin;
+  scrollbar-color: var(--control-hover-border) transparent;
+}
+
+.history-list::-webkit-scrollbar,
+.dialog::-webkit-scrollbar {
+  width: 8px;
+}
+
+.history-list::-webkit-scrollbar-thumb,
+.dialog::-webkit-scrollbar-thumb {
+  background: var(--control-hover-border);
+  border-radius: 999px;
+}
+
+.history-list::-webkit-scrollbar-track,
+.dialog::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .history-list {
   flex: 1;
   min-height: 0;
@@ -905,11 +1017,17 @@ input:focus-visible,
   display: flex;
   align-items: stretch;
   border-radius: 8px;
+  transition: background 0.12s ease;
 }
 
 .history-row:hover,
 .history-row.active {
   background: var(--accent-soft);
+}
+
+/* 当前条目：左侧点缀一条 accent 竖线，扫一眼即可定位 */
+.history-row.active {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .history-row.active .history-item-title {
@@ -954,6 +1072,7 @@ input:focus-visible,
   opacity: 0;
   margin-right: 4px;
   padding: 2px 8px;
+  transition: opacity 0.12s ease;
 }
 
 .history-row:hover .history-item-delete,
@@ -990,6 +1109,21 @@ input:focus-visible,
   border-top: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--muted-2);
+}
+
+/* 降低动态：关闭装饰性动画，保留功能本身 */
+@media (prefers-reduced-motion: reduce) {
+  .brand-cursor,
+  .dialog,
+  .dialog-backdrop,
+  .toast,
+  .history-panel.drawer {
+    animation: none;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 /* ---------- 移动端 ---------- */

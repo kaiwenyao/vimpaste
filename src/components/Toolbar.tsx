@@ -3,6 +3,7 @@ import { LANGUAGES } from '../detection/language'
 import type { LangId } from '../detection/language'
 import { THEMES } from '../theme/themes'
 import type { ThemeId } from '../theme/themes'
+import { IconChevronLeft, IconChevronRight, IconHelp, IconHistory, IconSettings } from './icons'
 
 export interface ToolbarProps {
   langId: LangId
@@ -54,7 +55,8 @@ export function Toolbar(props: ToolbarProps) {
     <header className="toolbar">
       <span className="brand" aria-label="VimPaste">
         <span className="brand-mark" aria-hidden="true">
-          &gt;_
+          &gt;
+          <span className="brand-cursor">_</span>
         </span>
         <span className="brand-name">VimPaste</span>
       </span>
@@ -67,21 +69,7 @@ export function Toolbar(props: ToolbarProps) {
         aria-expanded={historyOpen}
         onClick={onToggleHistory}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-          <path d="M3 3v5h5" />
-          <path d="M12 7v5l3.5 2" />
-        </svg>
+        <IconHistory />
       </button>
 
       <span className="lang-wrap">
@@ -109,7 +97,7 @@ export function Toolbar(props: ToolbarProps) {
         title="编辑器设置（键位、字体大小、主题）"
         onClick={onOpenSettings}
       >
-        ⚙
+        <IconSettings />
       </button>
 
       <select
@@ -136,7 +124,7 @@ export function Toolbar(props: ToolbarProps) {
           disabled={placeholderCount === 0}
           onClick={onPrevPlaceholder}
         >
-          ‹
+          <IconChevronLeft />
         </button>
         <button
           type="button"
@@ -145,14 +133,14 @@ export function Toolbar(props: ToolbarProps) {
           disabled={placeholderCount === 0}
           onClick={onNextPlaceholder}
         >
-          ›
+          <IconChevronRight />
         </button>
       </span>
 
       <span className="spacer" />
 
-      <button type="button" className="btn ghost" aria-label="快捷键帮助" onClick={onHelp}>
-        ?
+      <button type="button" className="btn ghost icon" aria-label="快捷键帮助" onClick={onHelp}>
+        <IconHelp />
       </button>
       <button
         ref={armedRef}

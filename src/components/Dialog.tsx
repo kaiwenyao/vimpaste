@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
+import { IconClose } from './icons'
 
 /** 通用对话框：Esc 关闭、打开时聚焦、点击遮罩关闭 */
 export function Dialog({
@@ -38,8 +39,13 @@ export function Dialog({
       <div className="dialog" role="dialog" aria-modal="true" aria-label={title}>
         <div className="dialog-header">
           <h2 className="dialog-title">{title}</h2>
-          <button type="button" className="btn ghost" aria-label={closeLabel} onClick={onClose}>
-            ✕
+          <button
+            type="button"
+            className="btn ghost icon"
+            aria-label={closeLabel}
+            onClick={onClose}
+          >
+            <IconClose size={13} />
           </button>
         </div>
         <div className="dialog-body">{children}</div>
