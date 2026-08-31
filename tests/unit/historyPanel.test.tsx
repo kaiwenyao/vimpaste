@@ -55,12 +55,18 @@ describe('HistoryPanel', () => {
   })
 
   it('按时间分组（今天 / 昨天 / 7 天内 / 更早）', () => {
+    // 分组按自然日边界划分，时间戳须相对「今日零点」构造，
+    // 否则 NOW-36h 之类的固定偏移在凌晨运行时会滑出「昨天」区间
+    const startOfToday = new Date(NOW)
+    startOfToday.setHours(0, 0, 0, 0)
+    const t0 = startOfToday.getTime()
+    const DAY = 86_400_000
     renderPanel({
       entries: [
         entry({ id: 'a', updatedAt: NOW - 60_000 }),
-        entry({ id: 'b', updatedAt: NOW - 36 * 3_600_000 }),
-        entry({ id: 'c', updatedAt: NOW - 5 * 86_400_000 }),
-        entry({ id: 'd', updatedAt: NOW - 90 * 86_400_000 }),
+        entry({ id: 'b', updatedAt: t0 - 3_600_000 }),
+        entry({ id: 'c', updatedAt: t0 - 3 * DAY }),
+        entry({ id: 'd', updatedAt: t0 - 40 * DAY }),
       ],
     })
     expect(screen.getByText('今天')).toBeInTheDocument()
