@@ -1,0 +1,172 @@
+/* 编辑区 —— 流程提示条、编辑器画框与复制确认条。
+   设计稿把「粘贴 → 跳转 → 修改 → 复制」的流程条放在编辑器正上方，
+   复制成功的反馈则由三处同时给出：按钮变绿、画框描边、下方确认条。 */
+
+/* 历史固定面板与编辑器并排的一行 */
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-page);
+}
+
+/* 画框：编辑器被一层大圆角容器包住，复制成功时整框描一圈鼠尾草绿 */
+.editor-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--bg-editor);
+  border: 2px solid var(--border);
+  transition: border-color 0.2s ease;
+}
+
+.editor-frame.copied {
+  border-color: var(--sage);
+}
+
+.editor-host {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ---------- 首次使用提示（流程条）---------- */
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 10px 9px 16px;
+  font-size: 13px;
+  color: var(--sage-ink);
+  background: var(--sage-soft);
+  border: 1px solid var(--sage-border);
+  border-radius: var(--radius-pill);
+}
+
+.hint-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.hint kbd {
+  color: var(--sage-ink);
+  background: var(--bg-raised);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.hint-close {
+  width: 26px;
+  height: 26px;
+  color: var(--sage-ink);
+  background: var(--bg-raised);
+}
+
+/* ---------- 复制成功确认条 ---------- */
+
+.copy-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 8px 16px 8px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--sage-soft);
+  border: 1px solid var(--sage-border);
+  animation: confirm-in 0.18s ease;
+}
+
+@keyframes confirm-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.copy-confirm-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--sage);
+  color: var(--on-sage);
+}
+
+.copy-confirm-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sage-ink);
+}
+
+.copy-confirm-note {
+  font-size: 12px;
+  color: var(--sage-ink);
+  opacity: 0.8;
+}
+
+.copy-confirm.err {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}
+
+.copy-confirm.err .copy-confirm-mark {
+  background: var(--danger);
+  color: var(--bg-page);
+}
+
+.copy-confirm.err .copy-confirm-text,
+.copy-confirm.err .copy-confirm-note {
+  color: var(--danger);
+}
+
+/* ---------- 新版本提示 ---------- */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 18px;
+  padding: 9px 10px 9px 16px;
+  font-size: 13px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-faint);
+  border-radius: var(--radius-pill);
+}
+
+@media (max-width: 640px) {
+  .editor-area {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .update-banner {
+    margin: 0 12px;
+  }
+}

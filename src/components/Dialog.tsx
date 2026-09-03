@@ -41,7 +41,7 @@ export function Dialog({
           <h2 className="dialog-title">{title}</h2>
           <button
             type="button"
-            className="btn ghost icon"
+            className="btn ghost icon dialog-close"
             aria-label={closeLabel}
             onClick={onClose}
           >

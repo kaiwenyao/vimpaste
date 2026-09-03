@@ -5,6 +5,7 @@ import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
+import { IconCheck, IconClose } from './components/icons'
 import type { LangId } from './detection/language'
 import { detectLanguage, languageLabel } from './detection/language'
 import type { EditorApi } from './editor/createEditor'
@@ -27,6 +28,8 @@ import { copyText } from './utils/clipboard'
 const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
 const TOAST_MS = 2200
+/** 复制反馈（按钮变绿 + 编辑器描边 + 确认条）同进同出的停留时长 */
+const COPY_FEEDBACK_MS = 3000
 const HISTORY_SAVE_DEBOUNCE_MS = 1500
 /** ≥ 该宽度时历史面板固定在编辑器左侧；更窄的视口退化为覆盖式抽屉 */
 const DOCKED_HISTORY_QUERY = '(min-width: 768px)'
@@ -34,6 +37,13 @@ const DOCKED_HISTORY_QUERY = '(min-width: 768px)'
 interface ToastState {
   text: string
   kind: 'ok' | 'info' | 'err'
+}
+
+/** 复制结果：text 是无障碍播报的主句，note 是仅供视觉的补充（字符数、是否入库） */
+interface CopyFeedback {
+  kind: 'ok' | 'err'
+  text: string
+  note: string
 }
 
 declare global {
@@ -76,10 +86,12 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null)
   const [swUpdateReady, setSwUpdateReady] = useState(false)
 
   const toastTimer = useRef(0)
   const clearTimer = useRef(0)
+  const copyTimer = useRef(0)
 
   // 历史快照需要读取最新值，用 ref 镜像状态（commitSnapshot 里避免闭包过期）
   const historyRef = useRef(history)
@@ -125,6 +137,7 @@ export default function App() {
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), [])
   useEffect(() => () => window.clearTimeout(clearTimer.current), [])
+  useEffect(() => () => window.clearTimeout(copyTimer.current), [])
 
   // 新版本 Service Worker 就绪：显示更新提示条（用户点击才刷新）
   useEffect(() => {
@@ -190,6 +203,9 @@ export default function App() {
   const handleDocChanged = useCallback((text: string) => {
     contentRef.current = text
     setContent(text)
+    // 一旦继续编辑，「已复制」的三处反馈立即收起——绿色描边不能停留在已被改动的内容上
+    window.clearTimeout(copyTimer.current)
+    setCopyFeedback(null)
     if (text === '') {
       setManualOverride(false)
       setPlaceholderCount(0)
@@ -346,13 +362,27 @@ export default function App() {
     if (!historyDockedRef.current) setHistoryOpen(false)
   }, [commitSnapshot])
 
+  const showCopyFeedback = useCallback((feedback: CopyFeedback) => {
+    window.clearTimeout(copyTimer.current)
+    setCopyFeedback(feedback)
+    copyTimer.current = window.setTimeout(() => setCopyFeedback(null), COPY_FEEDBACK_MS)
+  }, [])
+
   const handleCopy = useCallback(async () => {
     commitSnapshot()
     const channel = await copyText(content)
-    if (channel === 'clipboard') showToast('已复制到剪贴板', 'ok')
-    else if (channel === 'fallback') showToast('已复制（降级方式）', 'ok')
-    else showToast('复制失败，请手动全选后按 Ctrl/Cmd+C', 'err')
-  }, [content, showToast, commitSnapshot])
+    const stored = historyEnabledRef.current ? ' · 已存入历史' : ''
+    const note = `${content.length} 字符${stored}`
+    if (channel === 'clipboard') showCopyFeedback({ kind: 'ok', text: '已复制到剪贴板', note })
+    else if (channel === 'fallback')
+      showCopyFeedback({ kind: 'ok', text: '已复制（降级方式）', note })
+    else
+      showCopyFeedback({
+        kind: 'err',
+        text: '复制失败，请手动全选后按 Ctrl/Cmd+C',
+        note: '',
+      })
+  }, [content, showCopyFeedback, commitSnapshot])
 
   const handleClear = useCallback(() => {
     if (content !== '' && !clearArmed) {
@@ -387,27 +417,12 @@ export default function App() {
         onPrevPlaceholder={() => jump(-1)}
         onNextPlaceholder={() => jump(1)}
         canCopy={content.length > 0}
+        copied={copyFeedback?.kind === 'ok'}
         onCopy={() => void handleCopy()}
         clearArmed={clearArmed}
         onClear={handleClear}
         onHelp={() => setHelpOpen(true)}
       />
-
-      {!hintDismissed && (
-        <aside className="hint" aria-label="首次使用提示">
-          <span>
-            粘贴命令 → <kbd>]v</kbd> 跳到变量 → 修改 → 复制
-          </span>
-          <button
-            type="button"
-            className="btn ghost hint-close"
-            aria-label="关闭提示"
-            onClick={() => setHintDismissed(true)}
-          >
-            ×
-          </button>
-        </aside>
-      )}
 
       {swUpdateReady && (
         <div className="update-banner" role="status">
@@ -440,17 +455,54 @@ export default function App() {
         )}
 
         <main className="editor-area">
-          <CodeMirrorEditor
-            editorMode={editorMode}
-            onReady={handleReady}
-            callbacks={{
-              onDocChanged: handleDocChanged,
-              onCursor: (line, col) => setCursor({ line, col }),
-              onPlaceholderCount: setPlaceholderCount,
-              onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
-              onPaste: handleEditorPaste,
-            }}
-          />
+          {!hintDismissed && (
+            <aside className="hint" aria-label="首次使用提示">
+              <span className="hint-flow">
+                粘贴命令 → <kbd>]v</kbd> 跳到变量 → 修改 → 复制
+              </span>
+              <span className="spacer" />
+              <button
+                type="button"
+                className="btn icon hint-close"
+                aria-label="关闭提示"
+                onClick={() => setHintDismissed(true)}
+              >
+                <IconClose size={11} />
+              </button>
+            </aside>
+          )}
+
+          {/* 复制成功时整框描一圈鼠尾草绿：余光可见，不必回头看按钮 */}
+          <div className={`editor-frame ${copyFeedback?.kind === 'ok' ? 'copied' : ''}`}>
+            <CodeMirrorEditor
+              editorMode={editorMode}
+              onReady={handleReady}
+              callbacks={{
+                onDocChanged: handleDocChanged,
+                onCursor: (line, col) => setCursor({ line, col }),
+                onPlaceholderCount: setPlaceholderCount,
+                onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
+                onPaste: handleEditorPaste,
+              }}
+            />
+          </div>
+
+          {copyFeedback && (
+            <div className={`copy-confirm ${copyFeedback.kind === 'err' ? 'err' : ''}`}>
+              <span className="copy-confirm-mark" aria-hidden="true">
+                {copyFeedback.kind === 'ok' ? <IconCheck size={13} /> : <IconClose size={13} />}
+              </span>
+              {/* 播报主句单独成元素，字符数等补充信息不进无障碍名称 */}
+              <span className="copy-confirm-text" role="status">
+                {copyFeedback.text}
+              </span>
+              {copyFeedback.note !== '' && (
+                <span className="copy-confirm-note" aria-hidden="true">
+                  {copyFeedback.note}
+                </span>
+              )}
+            </div>
+          )}
         </main>
       </div>
 

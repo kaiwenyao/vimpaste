@@ -2,7 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { languageLabel } from '../detection/language'
 import type { HistoryEntry } from '../storage/history'
 import { formatRelativeTime, historyGroupLabel } from '../utils/time'
-import { IconClose } from './icons'
+import { IconClose, IconHistory, IconPlus, IconSearch, IconTrash } from './icons'
+
 export interface HistoryPanelProps {
   open: boolean
   /** docked：桌面端固定在左侧、参与布局；drawer：窄视口下覆盖式弹出抽屉 */
@@ -23,6 +24,17 @@ interface HistoryGroup {
   label: string
   items: HistoryEntry[]
 }
+
+/** 分组标题的英文副标：中文标题本身是稳定的可访问文本，英文只作装饰 */
+const GROUP_EN: Record<string, string> = {
+  今天: 'Today',
+  昨天: 'Yesterday',
+  '7 天内': 'This week',
+  '30 天内': 'This month',
+  更早: 'Earlier',
+}
+
+const CLEAR_ARM_MS = 4000
 
 function groupEntries(entries: HistoryEntry[]): HistoryGroup[] {
   const groups: HistoryGroup[] = []
@@ -91,7 +103,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
     if (!clearArmed) {
       setClearArmed(true)
       window.clearTimeout(clearTimer.current)
-      clearTimer.current = window.setTimeout(() => setClearArmed(false), 4000)
+      clearTimer.current = window.setTimeout(() => setClearArmed(false), CLEAR_ARM_MS)
       return
     }
     window.clearTimeout(clearTimer.current)
@@ -108,7 +120,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
         <span className="history-count">{entries.length} 条</span>
         <button
           type="button"
-          className="btn ghost icon"
+          className="btn ghost icon history-close"
           aria-label="关闭历史面板"
           onClick={onClose}
         >
@@ -116,29 +128,23 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </button>
       </header>
 
-      <div className="history-actions">
-        <button type="button" className="btn" onClick={onNewPaste}>
-          ＋ 新建粘贴
-        </button>
-        <label className="switch">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={enabled}
-            onChange={(e) => onToggleEnabled(e.target.checked)}
-          />
-          <span>自动保存</span>
-        </label>
-      </div>
+      <button type="button" className="btn history-new" aria-label="新建粘贴" onClick={onNewPaste}>
+        <IconPlus size={14} />
+        <span aria-hidden="true">新建粘贴</span>
+        <span className="en" aria-hidden="true">
+          New paste
+        </span>
+      </button>
 
       {enabled ? (
         <>
           <div className="history-search-wrap">
+            <IconSearch size={14} />
             <input
               ref={searchRef}
               type="text"
               className="history-search"
-              placeholder="搜索历史…"
+              placeholder="搜索历史 Search…"
               aria-label="搜索历史"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -147,9 +153,15 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
           {entries.length === 0 ? (
             <div className="history-empty">
-              暂无历史记录
-              <br />
-              粘贴内容后会自动保存在这里
+              <span className="history-empty-mark" aria-hidden="true">
+                <IconHistory size={24} />
+              </span>
+              <span>暂无历史记录</span>
+              <span>
+                粘贴内容后会自动保存在这里
+                <br />
+                <span className="en">Snapshots stay on this device</span>
+              </span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="history-empty">没有匹配「{query.trim()}」的历史</div>
@@ -158,7 +170,8 @@ export function HistoryPanel(props: HistoryPanelProps) {
               {groups.map((group) => (
                 <Fragment key={group.label}>
                   <li className="history-group" aria-hidden="true">
-                    {group.label}
+                    <span>{group.label}</span>
+                    <span className="en">{GROUP_EN[group.label]}</span>
                   </li>
                   {group.items.map((entry) => (
                     <li
@@ -172,9 +185,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
                         onClick={() => onOpenEntry(entry.id)}
                       >
                         <span className="history-item-title">{entry.title}</span>
-                        <span className="history-item-meta">
-                          {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
-                          {entry.content.length} 字符
+                        <span className="history-item-meta-row">
+                          <span className="history-item-meta">
+                            {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
+                            {entry.content.length} 字符
+                          </span>
+                          {entry.id === activeId && <span className="tag accent">编辑中</span>}
                         </span>
                       </button>
                       <button
@@ -183,7 +199,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                         aria-label={`删除「${entry.title}」`}
                         onClick={() => onDeleteEntry(entry.id)}
                       >
-                        <IconClose size={12} />
+                        <IconTrash size={13} />
                       </button>
                     </li>
                   ))}
@@ -194,18 +210,29 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </>
       ) : (
         <div className="history-empty">
-          历史已关闭
-          <br />
-          打开「自动保存」后，粘贴内容会保存在本浏览器
+          <span className="history-empty-mark" aria-hidden="true">
+            <IconHistory size={24} />
+          </span>
+          <span>历史已关闭</span>
+          <span>打开「自动保存」后，粘贴内容会保存在本浏览器</span>
         </div>
       )}
 
       <footer className="history-footer">
-        <span>仅保存在本浏览器 · 不上传</span>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={enabled}
+            onChange={(e) => onToggleEnabled(e.target.checked)}
+          />
+          <span>自动保存</span>
+        </label>
+        <span className="spacer" />
         {enabled && (
           <button
             type="button"
-            className={`btn ${clearArmed ? 'danger' : 'ghost'}`}
+            className={`btn ghost ${clearArmed ? 'danger' : ''}`}
             onClick={handleClearAll}
             aria-label={clearArmed ? '确认清空全部历史' : '清空全部历史'}
           >
@@ -213,6 +240,8 @@ export function HistoryPanel(props: HistoryPanelProps) {
           </button>
         )}
       </footer>
+
+      <span className="history-note">仅保存在本浏览器 · 不上传</span>
     </>
   )
 

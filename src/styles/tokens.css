@@ -1,0 +1,284 @@
+/* 设计令牌 —— 取自 Claude Design「Organic」设计系统（VimPaste UI 设计稿）。
+   暖米色底 + 陶土色主色 + 鼠尾草绿次色；圆角偏大、控件走胶囊形。
+   色阶（neutral / accent / accent-2）是固定调色板，写在 :root；
+   语义变量（--bg-*、--text、--accent…）按 html[data-theme] 分主题重新指派。 */
+
+:root {
+  /* ---------- 固定色阶 ---------- */
+  --c-neutral-100: #f9f4ed;
+  --c-neutral-200: #eee7db;
+  --c-neutral-300: #dcd3c4;
+  --c-neutral-400: #c0b6a5;
+  --c-neutral-500: #a19786;
+  --c-neutral-600: #82796a;
+  --c-neutral-700: #645c50;
+  --c-neutral-800: #474238;
+  --c-neutral-900: #2e2b25;
+
+  --c-accent-100: #fff2eb;
+  --c-accent-200: #ffe1d0;
+  --c-accent-300: #ffc6a5;
+  --c-accent-400: #f6a06b;
+  --c-accent-500: #d67f48;
+  --c-accent-600: #b2622d;
+  --c-accent-700: #8c491a;
+  --c-accent-800: #643312;
+  --c-accent-900: #402310;
+
+  --c-sage-100: #f0fae1;
+  --c-sage-200: #e1eecc;
+  --c-sage-300: #ccdbb2;
+  --c-sage-400: #aebf92;
+  --c-sage-500: #8fa073;
+  --c-sage-600: #728157;
+  --c-sage-700: #56633f;
+  --c-sage-800: #3d472b;
+  --c-sage-900: #272e1b;
+
+  /* ---------- 字体 ----------
+     设计稿使用 Caprasimo / Figtree / IBM Plex Mono。应用承诺「不加载任何远程资源」
+     （见 vite.config.ts 的 CSP：font-src 'self'），因此这里只把设计字体排在栈首，
+     本机装有即用，否则回落到系统字体，视觉性格由字重、字距与配色承担。 */
+  --font-display:
+    'Caprasimo', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-ui:
+    'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  --font-mono:
+    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  --editor-font-size: 14px;
+
+  /* ---------- 形状 ---------- */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* ---------- 深色（默认主题）----------
+     对应设计稿 1b：暖褐底，主色提亮到 accent-400，成功色用鼠尾草绿。 */
+  color-scheme: dark;
+  --bg-page: #211c17;
+  --bg-editor: #1a1611;
+  --bg-toolbar: #2c251e;
+  --bg-panel: #2c251e;
+  --bg-control: rgba(244, 233, 215, 0.09);
+  --bg-raised: #362e25;
+  --control-hover-bg: rgba(244, 233, 215, 0.15);
+  --control-hover-border: rgba(244, 233, 215, 0.32);
+  --border: rgba(244, 233, 215, 0.16);
+  --border-strong: rgba(244, 233, 215, 0.28);
+  --text: #f4e9d7;
+  --muted: rgba(244, 233, 215, 0.72);
+  --muted-2: rgba(244, 233, 215, 0.5);
+  --accent: var(--c-accent-400);
+  --accent-strong: var(--c-accent-300);
+  --on-accent: #2c1a0c;
+  --accent-soft: rgba(246, 160, 107, 0.14);
+  --accent-border: rgba(246, 160, 107, 0.42);
+  --accent-faint: rgba(246, 160, 107, 0.24);
+  --accent-ink: var(--c-accent-200);
+  --sage: var(--c-sage-500);
+  --sage-strong: var(--c-sage-400);
+  --on-sage: #1b2010;
+  --sage-soft: var(--c-sage-900);
+  --sage-border: var(--c-sage-700);
+  --sage-ink: var(--c-sage-200);
+  --danger: #f0846b;
+  --danger-bg: rgba(240, 132, 107, 0.16);
+  --danger-border: rgba(240, 132, 107, 0.55);
+  --warn: var(--c-accent-300);
+  --warn-bg: rgba(255, 198, 165, 0.14);
+  --ph-bg: var(--c-accent-800);
+  --ph-border: var(--c-accent-400);
+  --ph-ink: var(--c-accent-100);
+  --backdrop: rgba(20, 16, 12, 0.66);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 22px 56px rgba(0, 0, 0, 0.55);
+  --sel: rgba(246, 160, 107, 0.26);
+  --active-line: rgba(244, 233, 215, 0.05);
+  --active-line-gutter: rgba(244, 233, 215, 0.09);
+  --search: rgba(246, 160, 107, 0.3);
+  --search-active: rgba(246, 160, 107, 0.55);
+  --bracket-bg: rgba(174, 191, 146, 0.2);
+  --bracket-border: rgba(174, 191, 146, 0.5);
+  --switch-checked: var(--c-sage-600);
+  --info: #9fc0e8;
+  --info-bg: rgba(159, 192, 232, 0.16);
+  --ok: var(--c-sage-400);
+  --ok-bg: rgba(174, 191, 146, 0.16);
+  --visual: #d6a9d8;
+  --visual-bg: rgba(214, 169, 216, 0.16);
+
+  --syn-keyword: var(--c-accent-400);
+  --syn-control: #e2a6c8;
+  --syn-string: var(--c-sage-300);
+  --syn-number: var(--c-accent-300);
+  --syn-comment: rgba(244, 233, 215, 0.42);
+  --syn-variable: #e8dcc8;
+  --syn-func: #a8cbe0;
+  --syn-operator: rgba(232, 220, 200, 0.62);
+  --syn-def: var(--c-accent-300);
+  --syn-tag: #e2a6c8;
+  --syn-attr: var(--c-sage-300);
+  --syn-meta: rgba(244, 233, 215, 0.6);
+  --syn-link: #a8cbe0;
+  --syn-heading: var(--c-accent-300);
+  --syn-invalid: #f0846b;
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 24 16'%3E%3Cpath d='M4 4l8 8 8-8' fill='none' stroke='%23bdb2a2' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* ---------- 浅色（设计稿 1a 的主形态）---------- */
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-page: #f5ead8;
+  --bg-editor: var(--c-neutral-100);
+  --bg-toolbar: #ebddc5;
+  --bg-panel: #ebddc5;
+  --bg-control: var(--c-neutral-200);
+  --bg-raised: #ffffff;
+  --control-hover-bg: var(--c-neutral-300);
+  --control-hover-border: var(--c-neutral-400);
+  --border: var(--c-neutral-300);
+  --border-strong: var(--c-neutral-400);
+  --text: #201e1d;
+  --muted: var(--c-neutral-700);
+  --muted-2: var(--c-neutral-600);
+  --accent: #c67139;
+  --accent-strong: var(--c-accent-600);
+  --on-accent: #ffffff;
+  --accent-soft: var(--c-accent-100);
+  --accent-border: var(--c-accent-300);
+  --accent-faint: var(--c-accent-200);
+  --accent-ink: var(--c-accent-800);
+  --sage: var(--c-sage-600);
+  --sage-strong: var(--c-sage-700);
+  --on-sage: #ffffff;
+  --sage-soft: var(--c-sage-100);
+  --sage-border: var(--c-sage-300);
+  --sage-ink: var(--c-sage-800);
+  --danger: #a8331b;
+  --danger-bg: #ffe3dc;
+  --danger-border: #e0a493;
+  --warn: var(--c-accent-700);
+  --warn-bg: var(--c-accent-100);
+  --ph-bg: var(--c-accent-300);
+  --ph-border: var(--c-accent-600);
+  --ph-ink: var(--c-accent-900);
+  --backdrop: rgba(46, 43, 37, 0.5);
+  --shadow-sm: 0 1px 2px rgba(46, 43, 37, 0.14);
+  --shadow: 0 3px 10px rgba(46, 43, 37, 0.16);
+  --shadow-lg: 0 12px 32px rgba(46, 43, 37, 0.22);
+  --sel: rgba(198, 113, 57, 0.24);
+  --active-line: rgba(198, 113, 57, 0.07);
+  --active-line-gutter: rgba(198, 113, 57, 0.13);
+  --search: rgba(198, 113, 57, 0.24);
+  --search-active: rgba(198, 113, 57, 0.5);
+  --bracket-bg: rgba(114, 129, 87, 0.16);
+  --bracket-border: rgba(114, 129, 87, 0.5);
+  --switch-checked: var(--c-sage-500);
+  --info: #2a5a8c;
+  --info-bg: rgba(42, 90, 140, 0.12);
+  --ok: var(--c-sage-700);
+  --ok-bg: var(--c-sage-100);
+  --visual: #7a4a8c;
+  --visual-bg: rgba(122, 74, 140, 0.12);
+
+  --syn-keyword: var(--c-accent-700);
+  --syn-control: #8c4a72;
+  --syn-string: var(--c-sage-700);
+  --syn-number: var(--c-accent-600);
+  --syn-comment: var(--c-neutral-500);
+  --syn-variable: #3a332b;
+  --syn-func: #2a5a74;
+  --syn-operator: var(--c-neutral-600);
+  --syn-def: var(--c-accent-600);
+  --syn-tag: #8c4a72;
+  --syn-attr: var(--c-sage-700);
+  --syn-meta: var(--c-neutral-700);
+  --syn-link: #2a5a74;
+  --syn-heading: var(--c-accent-700);
+  --syn-invalid: #a8331b;
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 24 16'%3E%3Cpath d='M4 4l8 8 8-8' fill='none' stroke='%2382796a' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* ---------- 高对比 ----------
+   保留原有的无障碍取向（近黑底 + 纯白字），把主色换成同族的高亮暖橙与亮绿。 */
+[data-theme='contrast'] {
+  color-scheme: dark;
+  --bg-page: #000000;
+  --bg-editor: #000000;
+  --bg-toolbar: #0a0a0a;
+  --bg-panel: #0d0d0d;
+  --bg-control: #191512;
+  --bg-raised: #1f1a16;
+  --control-hover-bg: #2a231d;
+  --control-hover-border: #8a8079;
+  --border: #6a625a;
+  --border-strong: #8a8079;
+  --text: #ffffff;
+  --muted: #e6ded4;
+  --muted-2: #bdb4a9;
+  --accent: #ffb877;
+  --accent-strong: #ffd0a3;
+  --on-accent: #1a0d02;
+  --accent-soft: rgba(255, 184, 119, 0.18);
+  --accent-border: #ffb877;
+  --accent-faint: rgba(255, 184, 119, 0.38);
+  --accent-ink: #ffd0a3;
+  --sage: #bfe08a;
+  --sage-strong: #d6f0ad;
+  --on-sage: #10180a;
+  --sage-soft: rgba(191, 224, 138, 0.2);
+  --sage-border: #bfe08a;
+  --sage-ink: #d6f0ad;
+  --danger: #ff9c85;
+  --danger-bg: rgba(255, 156, 133, 0.22);
+  --danger-border: #ff9c85;
+  --warn: #ffd166;
+  --warn-bg: rgba(255, 209, 102, 0.2);
+  --ph-bg: rgba(255, 184, 119, 0.28);
+  --ph-border: #ffb877;
+  --ph-ink: #ffffff;
+  --backdrop: rgba(0, 0, 0, 0.78);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.8);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 22px 56px rgba(0, 0, 0, 0.85);
+  --sel: rgba(255, 184, 119, 0.38);
+  --active-line: rgba(255, 255, 255, 0.08);
+  --active-line-gutter: rgba(255, 255, 255, 0.15);
+  --search: rgba(255, 209, 102, 0.35);
+  --search-active: rgba(255, 209, 102, 0.62);
+  --bracket-bg: rgba(255, 255, 255, 0.16);
+  --bracket-border: rgba(255, 255, 255, 0.55);
+  --switch-checked: #6f8a4a;
+  --info: #9cc6ff;
+  --info-bg: rgba(156, 198, 255, 0.22);
+  --ok: #bfe08a;
+  --ok-bg: rgba(191, 224, 138, 0.22);
+  --visual: #e0aaff;
+  --visual-bg: rgba(224, 170, 255, 0.22);
+
+  --syn-keyword: #ffb877;
+  --syn-control: #e0aaff;
+  --syn-string: #bfe08a;
+  --syn-number: #ffd166;
+  --syn-comment: #bdb4a9;
+  --syn-variable: #ffffff;
+  --syn-func: #9cc6ff;
+  --syn-operator: #e6ded4;
+  --syn-def: #ffd166;
+  --syn-tag: #e0aaff;
+  --syn-attr: #bfe08a;
+  --syn-meta: #e6ded4;
+  --syn-link: #9cc6ff;
+  --syn-heading: #ffd166;
+  --syn-invalid: #ff9c85;
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 24 16'%3E%3Cpath d='M4 4l8 8 8-8' fill='none' stroke='%23e6ded4' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}

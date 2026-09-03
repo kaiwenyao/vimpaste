@@ -141,7 +141,7 @@ describe('HistoryPanel', () => {
   it('Esc 与「关闭历史面板」按钮触发 onClose；新建粘贴触发 onNewPaste', async () => {
     const user = userEvent.setup()
     const props = renderPanel()
-    await user.click(screen.getByRole('button', { name: '＋ 新建粘贴' }))
+    await user.click(screen.getByRole('button', { name: '新建粘贴' }))
     expect(props.onNewPaste).toHaveBeenCalledTimes(1)
     await user.keyboard('{Escape}')
     expect(props.onClose).toHaveBeenCalledTimes(1)

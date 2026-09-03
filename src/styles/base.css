@@ -1,0 +1,333 @@
+/* 基础层：重置、排版、以及跨面板复用的原子控件（按钮 / 标签 / 键帽 / 开关 / 下拉）。
+   形状语言来自设计稿：小控件一律胶囊形，容器用大圆角，边框细、阴影软。 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-page);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.spacer {
+  flex: 1;
+}
+
+button,
+select,
+input {
+  font-family: inherit;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[role='switch']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--sel);
+}
+
+/* 主题切换时表面颜色平滑过渡（body 背景需即时切换，见 theme e2e 断言） */
+.toolbar,
+.statusbar,
+.history-panel,
+.dialog,
+.hint,
+.update-banner {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+/* ---------- 双语副标：中文主标后跟的小号英文 ---------- */
+
+.en {
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: 0.82em;
+  color: var(--muted-2);
+}
+
+.btn .en {
+  color: inherit;
+  opacity: 0.72;
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  background: var(--bg-control);
+  color: var(--text);
+  border-radius: var(--radius-pill);
+  padding: 8px 15px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.08s ease;
+}
+
+.btn svg {
+  display: block;
+  flex: none;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+  color: var(--text);
+}
+
+.btn.icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.btn.sage {
+  background: var(--sage);
+  color: var(--on-sage);
+}
+
+.btn.sage:hover:not(:disabled) {
+  background: var(--sage-strong);
+}
+
+.btn.soft {
+  background: var(--accent-faint);
+  color: var(--accent-ink);
+}
+
+.btn.soft:hover:not(:disabled) {
+  background: var(--accent-border);
+}
+
+.btn.danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* ---------- 键帽 / 标签 ---------- */
+
+kbd,
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-faint);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+/* 主色按钮内部的键帽：借用按钮前景色，不再自带描边 */
+.btn.primary .kbd,
+.btn.sage .kbd {
+  color: inherit;
+  background: rgba(255, 255, 255, 0.24);
+  border-color: transparent;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.tag.accent {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.tag.sage {
+  background: var(--sage-soft);
+  color: var(--sage-ink);
+}
+
+.tag.neutral {
+  background: var(--bg-control);
+  color: var(--muted);
+}
+
+/* ---------- 下拉 ---------- */
+
+.select {
+  appearance: none;
+  background: var(--bg-control);
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 7px 32px 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.select:hover {
+  background-color: var(--control-hover-bg);
+}
+
+.select option {
+  font-family: var(--font-ui);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+/* ---------- 开关 ---------- */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.switch input[role='switch'] {
+  appearance: none;
+  width: 32px;
+  height: 19px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  margin: 0;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.switch input[role='switch']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+
+.switch input[role='switch']:checked {
+  background: var(--switch-checked);
+  border-color: transparent;
+}
+
+.switch input[role='switch']:checked::before {
+  transform: translateX(13px);
+  background: #fff;
+}
+
+.switch:has(input:checked) {
+  color: var(--text);
+}
+
+/* 降低动态：关闭装饰性动画，保留功能本身 */
+@media (prefers-reduced-motion: reduce) {
+  .brand-cursor,
+  .dialog,
+  .dialog-backdrop,
+  .toast,
+  .history-panel.drawer,
+  .copy-confirm {
+    animation: none;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+}

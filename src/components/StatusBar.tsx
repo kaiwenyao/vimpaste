@@ -1,4 +1,5 @@
 import type { EditorMode } from '../editor/editorMode'
+import { IconShield } from './icons'
 
 export interface StatusBarProps {
   editorMode: EditorMode
@@ -37,7 +38,10 @@ export function StatusBar({ editorMode, vimMode, line, col, langLabel, chars }: 
       <span className="status-item">{langLabel}</span>
       <span className="status-item">{chars} 字符</span>
       <span className="spacer" />
-      <span className="privacy">Local only · 未上传</span>
+      <span className="privacy">
+        <IconShield size={13} />
+        <span>Local only · 未上传</span>
+      </span>
     </footer>
   )
 }

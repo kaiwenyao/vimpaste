@@ -3,7 +3,15 @@ import { LANGUAGES } from '../detection/language'
 import type { LangId } from '../detection/language'
 import { THEMES } from '../theme/themes'
 import type { ThemeId } from '../theme/themes'
-import { IconChevronLeft, IconChevronRight, IconHelp, IconHistory, IconSettings } from './icons'
+import {
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCopy,
+  IconHelp,
+  IconHistory,
+  IconSettings,
+} from './icons'
 
 export interface ToolbarProps {
   langId: LangId
@@ -19,12 +27,19 @@ export interface ToolbarProps {
   onPrevPlaceholder: () => void
   onNextPlaceholder: () => void
   canCopy: boolean
+  /** 复制成功后的短暂状态：按钮就地变为「已复制」，与编辑器描边、确认条同进同出 */
+  copied: boolean
   onCopy: () => void
   clearArmed: boolean
   onClear: () => void
   onHelp: () => void
 }
 
+/**
+ * 工具栏按「身份 → 内容属性 → 待办 → 动作」排序（设计稿 1a）：
+ * 品牌、历史、语言在左，中间是待替换计数与前后跳转，右侧只留帮助/设置/主题/清空/复制。
+ * 英文副标与快捷键提示都是 aria-hidden 的装饰，可访问名称仍是稳定的中文标签。
+ */
 export function Toolbar(props: ToolbarProps) {
   const {
     langId,
@@ -40,6 +55,7 @@ export function Toolbar(props: ToolbarProps) {
     onPrevPlaceholder,
     onNextPlaceholder,
     canCopy,
+    copied,
     onCopy,
     clearArmed,
     onClear,
@@ -50,6 +66,10 @@ export function Toolbar(props: ToolbarProps) {
   useEffect(() => {
     if (clearArmed) armedRef.current?.focus()
   }, [clearArmed])
+
+  // 三态：空编辑器（中性）→ 有占位符待替换（主色）→ 有内容且已全部替换（鼠尾草绿）
+  const allReplaced = canCopy && placeholderCount === 0
+  const phState = !canCopy ? 'idle' : allReplaced ? 'done' : 'pending'
 
   return (
     <header className="toolbar">
@@ -63,13 +83,17 @@ export function Toolbar(props: ToolbarProps) {
 
       <button
         type="button"
-        className="btn icon"
+        className="btn"
         aria-label="历史记录"
         title="粘贴历史（保存在本浏览器）"
         aria-expanded={historyOpen}
         onClick={onToggleHistory}
       >
         <IconHistory />
+        <span aria-hidden="true">历史</span>
+        <span className="en" aria-hidden="true">
+          History
+        </span>
       </button>
 
       <span className="lang-wrap">
@@ -90,14 +114,57 @@ export function Toolbar(props: ToolbarProps) {
         </span>
       </span>
 
+      <span className={`ph-nav ${phState}`} role="group" aria-label="占位符导航">
+        {allReplaced ? (
+          <IconCheck className="ph-check" size={13} />
+        ) : (
+          <span className="ph-dot" aria-hidden="true" />
+        )}
+        <span className="ph-count" title="待替换占位符数量">
+          {placeholderCount} 个待替换
+        </span>
+        <span className="en" aria-hidden="true">
+          {allReplaced ? 'All replaced' : 'To replace'}
+        </span>
+        <button
+          type="button"
+          className="ph-btn"
+          aria-label="上一个占位符"
+          disabled={placeholderCount === 0}
+          onClick={onPrevPlaceholder}
+        >
+          <IconChevronLeft size={13} />
+        </button>
+        <button
+          type="button"
+          className="ph-btn"
+          aria-label="下一个占位符"
+          disabled={placeholderCount === 0}
+          onClick={onNextPlaceholder}
+        >
+          <IconChevronRight size={13} />
+        </button>
+      </span>
+
+      <span className="spacer" />
+
       <button
         type="button"
-        className="btn icon"
+        className="btn ghost icon"
+        aria-label="快捷键帮助"
+        title="快捷键与使用帮助"
+        onClick={onHelp}
+      >
+        <IconHelp size={17} />
+      </button>
+      <button
+        type="button"
+        className="btn ghost icon"
         aria-label="设置"
         title="编辑器设置（键位、字体大小、主题）"
         onClick={onOpenSettings}
       >
-        <IconSettings />
+        <IconSettings size={17} />
       </button>
 
       <select
@@ -113,35 +180,6 @@ export function Toolbar(props: ToolbarProps) {
         ))}
       </select>
 
-      <span className="ph-nav" role="group" aria-label="占位符导航">
-        <span className="ph-count" title="待替换占位符数量">
-          {placeholderCount} 个待替换
-        </span>
-        <button
-          type="button"
-          className="btn icon"
-          aria-label="上一个占位符"
-          disabled={placeholderCount === 0}
-          onClick={onPrevPlaceholder}
-        >
-          <IconChevronLeft />
-        </button>
-        <button
-          type="button"
-          className="btn icon"
-          aria-label="下一个占位符"
-          disabled={placeholderCount === 0}
-          onClick={onNextPlaceholder}
-        >
-          <IconChevronRight />
-        </button>
-      </span>
-
-      <span className="spacer" />
-
-      <button type="button" className="btn ghost icon" aria-label="快捷键帮助" onClick={onHelp}>
-        <IconHelp />
-      </button>
       <button
         ref={armedRef}
         type="button"
@@ -149,16 +187,32 @@ export function Toolbar(props: ToolbarProps) {
         onClick={onClear}
         aria-label={clearArmed ? '确认清空全部内容' : '清空编辑器'}
       >
-        {clearArmed ? '确认清空？' : '清空'}
+        <span aria-hidden="true">{clearArmed ? '确认清空？' : '清空'}</span>
+        {!clearArmed && (
+          <span className="en" aria-hidden="true">
+            Clear
+          </span>
+        )}
       </button>
+
       <button
         type="button"
-        className="btn primary"
+        className={`btn copy-btn ${copied ? 'sage' : 'primary'}`}
         disabled={!canCopy}
         onClick={onCopy}
+        aria-label="复制"
         title="复制全部内容（Ctrl/Cmd+Enter）"
       >
-        复制
+        {copied ? <IconCheck size={16} /> : <IconCopy />}
+        <span aria-hidden="true">{copied ? '已复制' : '复制'}</span>
+        <span className="en" aria-hidden="true">
+          {copied ? 'Copied' : 'Copy'}
+        </span>
+        {!copied && (
+          <span className="kbd" aria-hidden="true">
+            ⌘↵
+          </span>
+        )}
       </button>
     </header>
   )

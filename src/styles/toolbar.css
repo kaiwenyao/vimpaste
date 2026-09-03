@@ -1,0 +1,234 @@
+/* 工具栏 —— 按设计稿的顺序排布：身份（品牌）→ 内容属性（历史 / 语言）→
+   待办（占位符计数与前后跳转）→ 动作（帮助 / 设置 / 主题 / 清空 / 复制）。 */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--bg-toolbar);
+}
+
+/* ---------- 品牌 ---------- */
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 2px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+/* 终端光标闪烁，点题 Vim/命令行的品牌细节 */
+.brand-cursor {
+  animation: cursor-blink 1.15s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- 语言 ---------- */
+
+.lang-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-control);
+  border-radius: var(--radius-pill);
+  padding: 3px 6px 3px 3px;
+}
+
+.lang-wrap .select {
+  background-color: transparent;
+}
+
+.lang-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.lang-badge.auto {
+  color: var(--sage-ink);
+  background: var(--sage-soft);
+}
+
+.lang-badge.manual {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+/* ---------- 占位符计数与跳转 ---------- */
+
+.ph-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px 4px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-faint);
+}
+
+.ph-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.ph-count {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.ph-nav .en {
+  color: var(--accent-ink);
+  opacity: 0.75;
+  margin-right: 2px;
+}
+
+.ph-btn {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  color: var(--accent-ink);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background 0.14s ease,
+    transform 0.08s ease;
+}
+
+.ph-btn:hover:not(:disabled) {
+  background: var(--accent-faint);
+}
+
+.ph-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.ph-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 占位符全部替换完：整枚胶囊换成鼠尾草绿，作为「可以复制了」的第一处信号 */
+.ph-nav.done {
+  background: var(--sage-soft);
+  border-color: var(--sage-border);
+}
+
+.ph-nav.done .ph-count,
+.ph-nav.done .en {
+  color: var(--sage-ink);
+}
+
+.ph-check {
+  flex: none;
+  color: var(--sage);
+}
+
+/* 内容为空时计数胶囊保持中性，不喊「待替换」 */
+.ph-nav.idle {
+  background: var(--bg-control);
+  border-color: transparent;
+}
+
+.ph-nav.idle .ph-count,
+.ph-nav.idle .en {
+  color: var(--muted);
+}
+
+.ph-nav.idle .ph-dot {
+  background: var(--muted-2);
+}
+
+/* ---------- 右侧动作区 ---------- */
+
+.toolbar .btn.icon.ghost {
+  color: var(--muted);
+}
+
+.copy-btn {
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .toolbar .en,
+  .ph-nav .en {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .brand-name {
+    display: none;
+  }
+
+  .lang-wrap .select {
+    max-width: 148px;
+  }
+
+  /* 触摸目标放大到 34px：手机上没有 ]v，占位符跳转全靠这两枚按钮 */
+  .ph-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .copy-btn {
+    padding: 9px 14px;
+  }
+
+  .copy-btn .kbd {
+    display: none;
+  }
+}

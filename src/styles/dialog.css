@@ -1,0 +1,289 @@
+/* 对话框 —— 设置与帮助。设计稿 1e：大圆角卡片、卡片式单选、胶囊键帽。 */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+  animation: fade-in 0.14s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dialog {
+  background: var(--bg-panel);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 560px;
+  max-height: 84vh;
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+  animation: dialog-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes dialog-in {
+  from {
+    transform: translateY(8px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 22px 12px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 1;
+}
+
+.dialog-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.dialog-close {
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 22px 22px;
+}
+
+/* ---------- 设置 ---------- */
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-option {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 12px 15px;
+  cursor: pointer;
+  background: var(--bg-control);
+  transition:
+    border-color 0.14s ease,
+    background 0.14s ease;
+}
+
+.mode-option:hover {
+  background: var(--control-hover-bg);
+}
+
+.mode-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mode-option input[type='radio'] {
+  appearance: none;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  margin: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--bg-raised);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    border-width 0.14s ease;
+}
+
+.mode-option input[type='radio']:checked {
+  border-color: var(--accent);
+  border-width: 5px;
+}
+
+.mode-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mode-option-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.mode-option.active .mode-option-label {
+  color: var(--accent-ink);
+}
+
+.mode-option-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.mode-option.active .mode-option-desc {
+  color: var(--accent-ink);
+  opacity: 0.85;
+}
+
+.font-size-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.font-size-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.font-size-value {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg-control);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  min-width: 4.5em;
+  text-align: center;
+}
+
+/* ---------- 帮助 ---------- */
+
+.help-flow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--sage-soft);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sage-ink);
+}
+
+.help-flow kbd {
+  color: var(--sage-ink);
+  background: var(--bg-raised);
+  border-color: transparent;
+  font-size: 12.5px;
+}
+
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.help-section h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-2);
+}
+
+.help-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 4px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-row:last-child {
+  border-bottom: 0;
+}
+
+.help-row kbd {
+  min-width: 9.5em;
+  text-align: center;
+  font-size: 12.5px;
+  padding: 4px 12px;
+}
+
+.help-note {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* 隐私说明卡：帮助面板末尾那条带盾牌图标的提示 */
+.help-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+}
+
+.help-privacy-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-faint);
+  color: var(--accent-ink);
+}
+
+.help-privacy p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--accent-ink);
+}

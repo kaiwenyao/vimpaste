@@ -29,7 +29,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} title="编辑器设置" closeLabel="关闭设置">
       <section className="settings-section">
-        <h3 id="settings-mode-label">编辑器键位</h3>
+        <div className="settings-head">
+          <h3 id="settings-mode-label">编辑器键位</h3>
+          <span className="en">Key bindings</span>
+        </div>
         <div role="radiogroup" aria-labelledby="settings-mode-label" className="mode-options">
           {EDITOR_MODE_INFOS.map((info) => (
             <label
@@ -53,7 +56,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </section>
 
       <section className="settings-section">
-        <h3 id="settings-font-label">字体大小</h3>
+        <div className="settings-head">
+          <h3 id="settings-font-label">字体大小</h3>
+          <span className="en">Font size</span>
+        </div>
         <div className="font-size-row">
           <input
             type="range"
@@ -69,7 +75,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </section>
 
       <section className="settings-section">
-        <h3 id="settings-theme-label">颜色主题</h3>
+        <div className="settings-head">
+          <h3 id="settings-theme-label">颜色主题</h3>
+          <span className="en">Theme</span>
+        </div>
         <select
           className="select"
           aria-labelledby="settings-theme-label"
@@ -85,8 +94,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </section>
 
       <p className="help-note">
-        偏好保存在本浏览器，编辑内容永远不会被保存。Emacs 模式提供 Ctrl-a/e/k/b/f 等 readline 键位；
-        Vim 模式下 ]v / [v 仍可跳转占位符。
+        偏好保存在本浏览器。Emacs 模式提供 Ctrl-a/e/k/b/f 等 readline 键位；Vim 模式下 ]v / [v
+        仍可跳转占位符。
+        <br />
+        <span className="en">Preferences stay local; editor content is never uploaded.</span>
       </p>
     </Dialog>
   )

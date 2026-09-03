@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Dialog } from './Dialog'
+import { IconShield } from './icons'
 
 function Row({ keys, desc }: { keys: string; desc: string }) {
   return (
@@ -23,7 +24,18 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
   return (
     <Dialog open={open} onClose={onClose} title="快捷键与使用帮助" closeLabel="关闭帮助">
       <Section title="核心流程">
-        <p className="help-flow">粘贴命令 → ]v 跳到变量 → 修改 → 复制</p>
+        <p className="help-flow">
+          <span>粘贴命令</span>
+          <span aria-hidden="true">→</span>
+          <kbd>]v</kbd>
+          <span>跳到变量</span>
+          <span aria-hidden="true">→</span>
+          <kbd>c</kbd>
+          <span>修改</span>
+          <span aria-hidden="true">→</span>
+          <kbd>⌘↵</kbd>
+          <span>复制</span>
+        </p>
       </Section>
       <Section title="占位符与通用">
         <Row keys="]v" desc="跳到下一个占位符（并选中，可直接替换）" />
@@ -52,12 +64,22 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
         </p>
       </Section>
       <Section title="隐私">
+        <div className="help-privacy">
+          <span className="help-privacy-mark" aria-hidden="true">
+            <IconShield size={16} />
+          </span>
+          <p>
+            无后端、无账号、无统计。编辑与识别全在本机完成；只有偏好与可选的粘贴历史写入本浏览器。
+            <br />
+            <span className="en">No backend, no account, no analytics.</span>
+          </p>
+        </div>
         <p className="help-note">
           VimPaste
           完全在你的浏览器本地运行：编辑、语言识别、占位符标记与高亮全部在本机完成，没有后端服务器。
-          编辑内容不会写入 URL、localStorage、sessionStorage
-          或任何存储，也不会发送到网络；刷新或关闭页面后内容即消失。
-          仅保存键位模式、字号等非敏感偏好。
+          编辑内容不会写入 URL，也不会发送到网络。除非你打开「自动保存」，
+          否则刷新或关闭页面后内容即消失；打开后快照只写入本浏览器，可随时清空。
+          键位模式、字号等非敏感偏好同样只保存在本机。
           浏览器扩展或操作系统级剪贴板同步工具不在本应用控制范围内。
         </p>
       </Section>
