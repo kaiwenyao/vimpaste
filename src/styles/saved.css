@@ -1,6 +1,7 @@
 /* 「已保存」片段库与条目详情页 —— 由原侧栏面板演进为独立页面。
-   列表沿用历史面板的卡片行样式（.history-* 前缀保留）：标题（等宽）+ 元信息 + 行内操作，
-   点击行进详情页看完整元信息；当前正在编辑的条目常驻高亮并标「编辑中」。 */
+   页面底色与编辑器视图统一（--bg-page），内容限宽 880px 居中，
+   列表行是浮在页面上的卡片（浮层底 + 发丝边），点击行进详情页；
+   当前正在编辑的条目常驻高亮并标「编辑中」。 */
 
 /* ---------- 页面骨架 ---------- */
 
@@ -24,8 +25,15 @@
   min-height: 0;
   gap: 10px;
   padding: 16px 18px;
-  background: var(--bg-panel);
+  background: var(--bg-page);
   overflow-y: auto;
+}
+
+/* 内容列：限宽居中，页面在大屏上不再是一行拉满的棕色板 */
+.page > * {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
 }
 
 .page-topbar {
@@ -132,11 +140,11 @@
   min-height: 0;
   overflow-y: auto;
   list-style: none;
-  margin: 0;
-  padding: 0 0 6px;
+  margin-block: 0;
+  padding: 2px 0 6px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
 }
 
 .history-group {
@@ -147,7 +155,7 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted-2);
-  padding: 10px 6px 2px;
+  padding: 10px 4px 0;
   user-select: none;
 }
 
@@ -156,17 +164,19 @@
   align-items: stretch;
   position: relative;
   border-radius: var(--radius-md);
-  border: 1px solid transparent;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   transition:
     background 0.14s ease,
     border-color 0.14s ease;
 }
 
 .history-row:hover {
-  background: var(--bg-control);
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
 }
 
-/* 当前条目：整卡换成主色底 + 描边，不必再靠一条竖线找位置 */
+/* 当前条目：主色描边 + 淡主色底，不必再靠一条竖线找位置 */
 .history-row.active {
   background: var(--accent-soft);
   border-color: var(--accent-border);
@@ -333,7 +343,10 @@
   font-size: 12px;
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .chip .en {
@@ -478,7 +491,7 @@
 }
 
 .detail-title {
-  margin: 2px 0 0;
+  margin-block: 2px 0;
   font-size: 18px;
   font-family: var(--font-mono);
   font-weight: 600;
@@ -486,34 +499,33 @@
   word-break: break-all;
 }
 
+/* 元信息：块状网格（label 上、value 下），格子间只留呼吸感，不再画对不齐的表格线 */
 .detail-meta {
-  background: var(--bg-editor);
+  background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 6px 16px;
 }
 
 .detail-grid {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 14px 18px;
+  padding: 14px 16px;
 }
 
 .detail-row {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   min-width: 0;
 }
 
 .detail-row dt {
-  flex: none;
-  width: 72px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--muted-2);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .detail-row dd {
@@ -524,7 +536,7 @@
 }
 
 .detail-sub {
-  margin-left: 8px;
+  margin-left: 6px;
   font-size: 11.5px;
   color: var(--muted-2);
 }
@@ -609,18 +621,5 @@
 
   .page-topbar .btn .en {
     display: none;
-  }
-
-  .detail-row {
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .detail-grid .detail-row:nth-last-child(-n + 2) {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .detail-grid .detail-row:last-child {
-    border-bottom: 0;
   }
 }

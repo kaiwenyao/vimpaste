@@ -20,7 +20,8 @@
   background: var(--bg-page);
 }
 
-/* 画框：编辑器被一层大圆角容器包住，复制成功时整框描一圈鼠尾草绿 */
+/* 画框：编辑器被一层大圆角容器包住，像嵌进桌面的终端屏幕——
+   发丝边框 + 轻微内阴影制造下陷感；复制成功时整框描一圈鼠尾草绿 ring。 */
 .editor-frame {
   flex: 1;
   min-height: 0;
@@ -28,12 +29,18 @@
   overflow: hidden;
   border-radius: var(--radius-lg);
   background: var(--bg-editor);
-  border: 2px solid var(--border);
-  transition: border-color 0.2s ease;
+  border: 1px solid var(--border);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.14);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .editor-frame.copied {
   border-color: var(--sage);
+  box-shadow:
+    inset 0 2px 12px rgba(0, 0, 0, 0.14),
+    0 0 0 2px var(--sage-border);
 }
 
 .editor-host {
@@ -42,25 +49,26 @@
   overflow: hidden;
 }
 
-/* ---------- 首次使用提示（流程条）---------- */
+/* ---------- 首次使用提示（流程条）----------
+   紧凑信息条：它是辅助说明，不该比编辑器抢眼。 */
 
 .hint {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px 10px 9px 16px;
-  font-size: 13px;
+  padding: 6px 6px 6px 14px;
+  font-size: 12.5px;
   color: var(--sage-ink);
   background: var(--sage-soft);
   border: 1px solid var(--sage-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
 }
 
 .hint-flow {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex-wrap: wrap;
   font-weight: 600;
 }
@@ -73,8 +81,8 @@
 }
 
 .hint-close {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   color: var(--sage-ink);
   background: var(--bg-raised);
 }
