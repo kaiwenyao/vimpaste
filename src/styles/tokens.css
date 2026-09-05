@@ -58,43 +58,45 @@
   --radius-pill: 999px;
 
   /* ---------- 深色（默认主题）----------
-     对应设计稿 1b：暖褐底，主色提亮到 accent-400，成功色用鼠尾草绿。 */
+     「暖木桌上的终端」：页面是深暖底，工具栏/面板是中层桌面，编辑器屏幕最深
+     （下陷感），卡片上浮。主色提亮到 accent-400；成功色与提示底一律用鼠尾草
+     的 alpha 叠加，避免出现大块实色橄榄。 */
   color-scheme: dark;
-  --bg-page: #211c17;
-  --bg-editor: #1a1611;
-  --bg-toolbar: #2c251e;
-  --bg-panel: #2c251e;
-  --bg-control: rgba(244, 233, 215, 0.09);
-  --bg-raised: #362e25;
-  --control-hover-bg: rgba(244, 233, 215, 0.15);
-  --control-hover-border: rgba(244, 233, 215, 0.32);
-  --border: rgba(244, 233, 215, 0.16);
-  --border-strong: rgba(244, 233, 215, 0.28);
+  --bg-page: #191512;
+  --bg-editor: #0f0c09;
+  --bg-toolbar: #221d17;
+  --bg-panel: #221d17;
+  --bg-control: rgba(244, 233, 215, 0.07);
+  --bg-raised: #2c2620;
+  --control-hover-bg: rgba(244, 233, 215, 0.13);
+  --control-hover-border: rgba(244, 233, 215, 0.3);
+  --border: rgba(244, 233, 215, 0.1);
+  --border-strong: rgba(244, 233, 215, 0.24);
   --text: #f4e9d7;
-  --muted: rgba(244, 233, 215, 0.72);
-  --muted-2: rgba(244, 233, 215, 0.5);
+  --muted: rgba(244, 233, 215, 0.7);
+  --muted-2: rgba(244, 233, 215, 0.48);
   --accent: var(--c-accent-400);
   --accent-strong: var(--c-accent-300);
   --on-accent: #2c1a0c;
-  --accent-soft: rgba(246, 160, 107, 0.14);
-  --accent-border: rgba(246, 160, 107, 0.42);
-  --accent-faint: rgba(246, 160, 107, 0.24);
+  --accent-soft: rgba(246, 160, 107, 0.13);
+  --accent-border: rgba(246, 160, 107, 0.4);
+  --accent-faint: rgba(246, 160, 107, 0.2);
   --accent-ink: var(--c-accent-200);
   --sage: var(--c-sage-500);
   --sage-strong: var(--c-sage-400);
   --on-sage: #1b2010;
-  --sage-soft: var(--c-sage-900);
-  --sage-border: var(--c-sage-700);
+  --sage-soft: rgba(174, 191, 146, 0.13);
+  --sage-border: rgba(174, 191, 146, 0.35);
   --sage-ink: var(--c-sage-200);
   --danger: #f0846b;
   --danger-bg: rgba(240, 132, 107, 0.16);
   --danger-border: rgba(240, 132, 107, 0.55);
   --warn: var(--c-accent-300);
   --warn-bg: rgba(255, 198, 165, 0.14);
-  --ph-bg: var(--c-accent-800);
+  --ph-bg: rgba(246, 160, 107, 0.14);
   --ph-border: var(--c-accent-400);
   --ph-ink: var(--c-accent-100);
-  --backdrop: rgba(20, 16, 12, 0.66);
+  --backdrop: rgba(12, 9, 7, 0.7);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 22px 56px rgba(0, 0, 0, 0.55);
@@ -132,19 +134,20 @@
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 24 16'%3E%3Cpath d='M4 4l8 8 8-8' fill='none' stroke='%23bdb2a2' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-/* ---------- 浅色（设计稿 1a 的主形态）---------- */
+/* ---------- 浅色（设计稿 1a 的主形态）----------
+   编辑器是「纸面」——比页面更亮的浅色，工具栏是更深的桌沿。 */
 [data-theme='light'] {
   color-scheme: light;
-  --bg-page: #f5ead8;
-  --bg-editor: var(--c-neutral-100);
-  --bg-toolbar: #ebddc5;
-  --bg-panel: #ebddc5;
-  --bg-control: var(--c-neutral-200);
+  --bg-page: #f2ebdc;
+  --bg-editor: #fdfaf3;
+  --bg-toolbar: #e9ddc6;
+  --bg-panel: #efe7d6;
+  --bg-control: #e4d9c3;
   --bg-raised: #ffffff;
-  --control-hover-bg: var(--c-neutral-300);
+  --control-hover-bg: #dcd0ba;
   --control-hover-border: var(--c-neutral-400);
-  --border: var(--c-neutral-300);
-  --border-strong: var(--c-neutral-400);
+  --border: #d8ccb6;
+  --border-strong: #bfb49f;
   --text: #201e1d;
   --muted: var(--c-neutral-700);
   --muted-2: var(--c-neutral-600);
