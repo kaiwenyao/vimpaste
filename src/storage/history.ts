@@ -1,6 +1,6 @@
 /**
- * 粘贴历史存储：写入浏览器 localStorage（键 vimpaste.history.v1），不上传任何数据。
- * 这是用户显式可关闭的功能（历史面板中一键关闭并清空，见 prefs.historyEnabled）。
+ * 片段库存储：写入浏览器 localStorage（键 vimpaste.history.v1），不上传任何数据。
+ * 写入只发生在用户手动保存（工具栏「保存」/ Ctrl/Cmd+S）时。
  * 上限：最近 MAX_HISTORY_ENTRIES 条；单条内容超过 MAX_ENTRY_CHARS 字符时不保存该条，
  * 容量不足（QuotaExceeded）时从最旧开始丢弃重试。
  */

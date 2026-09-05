@@ -2,13 +2,12 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { CodeMirrorEditor } from './components/CodeMirrorEditor'
 import { EntryMetaBar, VariableFillBar } from './components/EntryBar'
 import { HelpDialog } from './components/HelpDialog'
-import { HistoryPanel } from './components/HistoryPanel'
-import type { SnippetKindFilter } from './components/HistoryPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import type { CloudStatusView } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import { IconCheck, IconClose } from './components/icons'
+import { Dialog } from './components/Dialog'
 import type { LangId } from './detection/language'
 import { detectLanguage, languageLabel } from './detection/language'
 import { fillPromptTemplate, parsePromptVariables } from './detection/placeholders'
@@ -25,6 +24,10 @@ import { LocalSnippetStore } from './storage/SnippetStore'
 import type { SnippetStore } from './storage/SnippetStore'
 import { loadPrefs, savePrefs } from './storage/prefs'
 import { createHistoryId, deriveTitle } from './storage/history'
+import { SAVED_PATH, navigate, useHashRoute } from './router'
+import { SavedPage } from './pages/SavedPage'
+import type { SnippetKindFilter } from './pages/SavedPage'
+import { SnippetDetailPage } from './pages/SnippetDetailPage'
 import { isThemeId } from './theme/themes'
 import type { ThemeId } from './theme/themes'
 import { copyText } from './utils/clipboard'
@@ -37,9 +40,6 @@ const CLEAR_ARM_MS = 4000
 const TOAST_MS = 2200
 /** 复制反馈（按钮变绿 + 编辑器描边 + 确认条）同进同出的停留时长 */
 const COPY_FEEDBACK_MS = 3000
-const HISTORY_SAVE_DEBOUNCE_MS = 1500
-/** ≥ 该宽度时历史面板固定在编辑器左侧；更窄的视口退化为覆盖式抽屉 */
-const DOCKED_HISTORY_QUERY = '(min-width: 768px)'
 
 interface ToastState {
   text: string
@@ -90,15 +90,7 @@ export default function App() {
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
   const [store, setStore] = useState<SnippetStore>(() => new LocalSnippetStore(LOCAL_SNIPPET_STORAGE))
-  const [history, setHistory] = useState<Snippet[]>(() => alive(store.current()))
-  const [historyEnabled, setHistoryEnabled] = useState(() => loadPrefs().historyEnabled)
-  // 桌面宽视口默认固定展示；窄视口抽屉不自动弹出（避免一进页面就盖住编辑器）
-  const [historyOpen, setHistoryOpen] = useState(
-    () => loadPrefs().historyPanelOpen && window.matchMedia(DOCKED_HISTORY_QUERY).matches,
-  )
-  const [historyDocked, setHistoryDocked] = useState(
-    () => window.matchMedia(DOCKED_HISTORY_QUERY).matches,
-  )
+  const [library, setLibrary] = useState<Snippet[]>(() => alive(store.current()))
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [editorKind, setEditorKind] = useState<SnippetKind>('command')
   const [kindFilter, setKindFilter] = useState<SnippetKindFilter>('all')
@@ -117,37 +109,33 @@ export default function App() {
   const [collections, setCollections] = useState<ApiCollection[]>([])
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null)
   const [varValues, setVarValues] = useState<Record<string, string>>({})
+  /** 有未保存修改时的继续动作：确认对话框背后的那一步（打开条目 / 新建…） */
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
 
   const toastTimer = useRef(0)
   const clearTimer = useRef(0)
   const copyTimer = useRef(0)
 
-  // 历史快照需要读取最新值，用 ref 镜像状态（commitSnapshot 里避免闭包过期）
-  const historyRef = useRef(history)
+  // 保存/守卫需要读取最新值，用 ref 镜像状态（回调里避免闭包过期）
+  const libraryRef = useRef(library)
   const contentRef = useRef(content)
   const langIdRef = useRef(langId)
-  const historyEnabledRef = useRef(historyEnabled)
   const activeEntryIdRef = useRef<string | null>(activeEntryId)
-  const historyDockedRef = useRef(historyDocked)
   const editorKindRef = useRef(editorKind)
   const storeRef = useRef(store)
   const sessionRef = useRef<CloudSession | null>(null)
+  /** 从片段库跳回编辑器时是否自动聚焦（仅导航触发，刷新不聚焦） */
+  const pendingFocusRef = useRef(false)
 
   useEffect(() => {
-    historyRef.current = history
-  }, [history])
+    libraryRef.current = library
+  }, [library])
   useEffect(() => {
     langIdRef.current = langId
   }, [langId])
   useEffect(() => {
-    historyEnabledRef.current = historyEnabled
-  }, [historyEnabled])
-  useEffect(() => {
     activeEntryIdRef.current = activeEntryId
   }, [activeEntryId])
-  useEffect(() => {
-    historyDockedRef.current = historyDocked
-  }, [historyDocked])
   useEffect(() => {
     editorKindRef.current = editorKind
   }, [editorKind])
@@ -161,27 +149,28 @@ export default function App() {
   // store 换绑（登录 / 登出）或条目变化：同步快照到 React 状态（墓碑不进 UI）
   useEffect(() => {
     const apply = (list: Snippet[]) => {
-      historyRef.current = alive(list)
-      setHistory(historyRef.current)
+      libraryRef.current = alive(list)
+      setLibrary(libraryRef.current)
     }
     apply(store.current())
     return store.subscribe(apply)
   }, [store])
 
-  /** 活动条目（编辑中的那条） */
-  const activeEntry = history.find((e) => e.id === activeEntryId) ?? null
+  /** 活动条目（编辑器里打开的那条） */
+  const activeEntry = library.find((e) => e.id === activeEntryId) ?? null
 
-  // 跟随视口宽度在「固定面板」与「抽屉」间切换。跨界时按已存偏好重同步瞬态显隐，
-  // 避免面板开着拖窄变成遮挡抽屉、或抽屉关着拖宽后面板不按偏好恢复（只改瞬态，不写偏好）
-  useEffect(() => {
-    const mq = window.matchMedia(DOCKED_HISTORY_QUERY)
-    const onChange = (e: MediaQueryListEvent) => {
-      setHistoryDocked(e.matches)
-      setHistoryOpen(loadPrefs().historyPanelOpen && e.matches)
-    }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
+  // —— 手动保存模型 ——
+  // 内容只有点「保存」（或 Ctrl/Cmd+S）才进片段库：非空且与活动条目不一致即为未保存
+  const dirty = content.trim() !== '' && (activeEntry === null || activeEntry.content !== content)
+  const computeDirty = useCallback((): boolean => {
+    const text = contentRef.current
+    if (text.trim() === '') return false
+    const active = libraryRef.current.find((e) => e.id === activeEntryIdRef.current)
+    return !active || active.content !== text
   }, [])
+
+  // —— 视图路由（#/ 编辑器 · #/saved 片段库 · #/saved/:id 详情）——
+  const route = useHashRoute()
 
   const showToast = useCallback((text: string, kind: ToastState['kind']) => {
     window.clearTimeout(toastTimer.current)
@@ -245,8 +234,7 @@ export default function App() {
     editorRef.current?.setEditorMode(editorMode)
   }, [editorMode])
 
-  // 持久化非敏感偏好（编辑内容只随片段功能保存在历史存储键中）
-  // historyPanelOpen 只由用户显式切换时写入（见 setHistoryPanelOpen），避免窄视口加载时覆盖桌面端的展开偏好
+  // 持久化非敏感偏好（编辑内容只随片段功能保存在片段库存储键中）
   useEffect(() => {
     savePrefs({
       ...loadPrefs(),
@@ -254,9 +242,8 @@ export default function App() {
       fontSize,
       hintDismissed,
       theme,
-      historyEnabled,
     })
-  }, [editorMode, fontSize, hintDismissed, theme, historyEnabled])
+  }, [editorMode, fontSize, hintDismissed, theme])
 
   // 颜色主题：同步到 <html data-theme>，样式全部由 CSS 变量驱动
   useEffect(() => {
@@ -267,6 +254,16 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--editor-font-size', `${fontSize}px`)
   }, [fontSize])
+
+  // 从片段库/详情页回到编辑器：视图重新可见后重测量并按需聚焦
+  useEffect(() => {
+    if (route.view !== 'editor') return
+    editorRef.current?.view.requestMeasure()
+    if (pendingFocusRef.current) {
+      pendingFocusRef.current = false
+      editorRef.current?.view.focus()
+    }
+  }, [route.view])
 
   const handleReady = useCallback((api: EditorApi) => {
     editorRef.current = api
@@ -294,7 +291,7 @@ export default function App() {
     if (text === '') {
       setManualOverride(false)
       setPlaceholderCount(0)
-      // 清空编辑器即开始新的粘贴：与历史条目解除关联（条目本身保留）
+      // 清空编辑器即开始新的粘贴：与片段条目解除关联（条目本身保留）
       activeEntryIdRef.current = null
       setActiveEntryId(null)
     }
@@ -317,12 +314,12 @@ export default function App() {
     if (isThemeId(next)) setTheme(next)
   }, [])
 
-  /** 把当前编辑器内容写入/更新片段快照（新建或续写当前条目；与最近一条相同则复用） */
+  /** 手动保存：把当前编辑器内容写入/更新片段条目（新建或续写当前条目；与最近一条相同则复用） */
   const commitSnapshot = useCallback(() => {
     const text = contentRef.current
-    if (!historyEnabledRef.current || text.trim() === '') return
+    if (text.trim() === '') return
     const now = Date.now()
-    const current = historyRef.current
+    const current = libraryRef.current
     const prevId = activeEntryIdRef.current
     const kind = editorKindRef.current
     const langForKind: LangId =
@@ -354,63 +351,61 @@ export default function App() {
     storeRef.current.upsert(entry)
   }, [])
 
-  // 防抖快照：停止输入 1.5s 后落盘；清空时的解除关联在 handleDocChanged 里完成
-  useEffect(() => {
-    if (content.trim() === '') return
-    const timer = window.setTimeout(commitSnapshot, HISTORY_SAVE_DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
-  }, [content, langId, commitSnapshot])
+  /** 「保存」按钮 / Ctrl/Cmd+S：唯一的入库入口 */
+  const handleSave = useCallback(() => {
+    if (contentRef.current.trim() === '') return
+    commitSnapshot()
+    showToast('已保存到片段库', 'ok')
+  }, [commitSnapshot, showToast])
 
-  // 复制与页面卸载前立即落盘，避免防抖窗口内的修改丢失
+  // Ctrl/Cmd+S 手动保存（capture 前于编辑器/浏览器默认行为，且仅在确有修改时生效）
   useEffect(() => {
-    const flush = () => commitSnapshot()
-    window.addEventListener('beforeunload', flush)
-    return () => window.removeEventListener('beforeunload', flush)
-  }, [commitSnapshot])
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (computeDirty()) handleSave()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [computeDirty, handleSave])
 
-  /** 固定面板的显式显隐切换：状态与偏好一起持久化（抽屉形态的开合走 setHistoryOpen，纯瞬态） */
-  const setHistoryPanelOpen = useCallback((next: boolean) => {
-    setHistoryOpen(next)
-    savePrefs({ ...loadPrefs(), historyPanelOpen: next })
+  /** 有未保存修改时先确认再继续；无修改直接放行 */
+  const guardUnsaved = useCallback(
+    (run: () => void) => {
+      if (computeDirty()) setPendingNav(() => run)
+      else run()
+    },
+    [computeDirty],
+  )
+
+  /** 把条目载入编辑器（不做保存——未保存的修改由确认对话框把关） */
+  const loadEntryIntoEditor = useCallback((id: string) => {
+    const entry = libraryRef.current.find((e) => e.id === id)
+    if (!entry) return
+    activeEntryIdRef.current = id
+    setActiveEntryId(id)
+    const entryKind = entry.kind ?? 'command'
+    setEditorKind(entryKind)
+    setLangId(entryKind === 'prompt' && entry.langId !== 'markdown' ? 'plaintext' : entry.langId)
+    setManualOverride(true)
+    editorRef.current?.setDoc(entry.content)
+    pendingFocusRef.current = true
+    navigate('/')
   }, [])
 
-  const handleToggleHistory = useCallback(() => {
-    // 只有固定面板的切换落盘；窄视口抽屉是临时状态，不覆盖桌面端的展开偏好
-    if (historyDockedRef.current) {
-      setHistoryPanelOpen(!historyOpen)
-    } else {
-      setHistoryOpen(!historyOpen)
-    }
-  }, [historyOpen, setHistoryPanelOpen])
+  const handleOpenEntry = useCallback(
+    (id: string) => guardUnsaved(() => loadEntryIntoEditor(id)),
+    [guardUnsaved, loadEntryIntoEditor],
+  )
 
-  /** 一次真实粘贴 = 一条新历史：粘贴时与当前条目解除关联（旧条目保留） */
+  /** 一次真实粘贴 = 一条新条目：粘贴时与当前条目解除关联（旧条目保留，保存后成为新条目） */
   const handleEditorPaste = useCallback(() => {
     if (activeEntryIdRef.current === null) return
     activeEntryIdRef.current = null
     setActiveEntryId(null)
   }, [])
-
-  const handleOpenEntry = useCallback(
-    (id: string) => {
-      const entry = historyRef.current.find((e) => e.id === id)
-      if (!entry) return
-      // 切换前先把当前内容落盘，未保存的修改不会丢
-      if (contentRef.current.trim() !== '' && contentRef.current !== entry.content) {
-        commitSnapshot()
-      }
-      activeEntryIdRef.current = id
-      setActiveEntryId(id)
-      const entryKind = entry.kind ?? 'command'
-      setEditorKind(entryKind)
-      setLangId(entryKind === 'prompt' && entry.langId !== 'markdown' ? 'plaintext' : entry.langId)
-      setManualOverride(true)
-      editorRef.current?.setDoc(entry.content)
-      editorRef.current?.view.focus()
-      // 抽屉形态下点击条目后自动收起；固定面板保持展示
-      if (!historyDockedRef.current) setHistoryOpen(false)
-    },
-    [commitSnapshot],
-  )
 
   const handleDeleteEntry = useCallback((id: string) => {
     // 云端模式：remove 触发 onRemove 钩子 → 入队软删除（墓碑由服务端传播）
@@ -421,11 +416,20 @@ export default function App() {
     }
   }, [])
 
+  /** 详情页删除：删除后回到片段列表 */
+  const handleDeleteFromDetail = useCallback(
+    (id: string) => {
+      handleDeleteEntry(id)
+      navigate(SAVED_PATH)
+    },
+    [handleDeleteEntry],
+  )
+
   const handleClearHistory = useCallback(() => {
     const session = sessionRef.current
     if (session) {
       // 云端模式：清空 = 全部软删除（仅本地条目直接丢弃，不惊动服务器）
-      for (const s of historyRef.current) {
+      for (const s of libraryRef.current) {
         if (!s.localOnly) session.engine.enqueueDelete(s.id)
       }
     }
@@ -434,46 +438,51 @@ export default function App() {
     setActiveEntryId(null)
   }, [])
 
-  const handleHistoryEnabledChange = useCallback(
-    (next: boolean) => {
-      historyEnabledRef.current = next
-      setHistoryEnabled(next)
-      if (!next) {
-        handleClearHistory()
-      } else if (contentRef.current.trim() !== '') {
-        // 重新打开时当前内容可能早已停止输入（防抖不会再触发），立即补一次快照
-        commitSnapshot()
-      }
-    },
-    [handleClearHistory, commitSnapshot],
-  )
-
   const handleNewPaste = useCallback(() => {
-    if (contentRef.current.trim() !== '') commitSnapshot()
-    setEditorKind('command')
-    // 从 prompt 形态切回：解除手动覆盖，语言识别重新接管（内容为空时归位纯文本）
-    setManualOverride(false)
-    setLangId((prev) => (prev === 'markdown' ? 'plaintext' : prev))
-    editorRef.current?.setDoc('')
-    editorRef.current?.view.focus()
-    if (!historyDockedRef.current) setHistoryOpen(false)
-  }, [commitSnapshot])
+    guardUnsaved(() => {
+      setEditorKind('command')
+      // 从 prompt 形态切回：解除手动覆盖，语言识别重新接管（内容为空时归位纯文本）
+      setManualOverride(false)
+      setLangId((prev) => (prev === 'markdown' ? 'plaintext' : prev))
+      activeEntryIdRef.current = null
+      setActiveEntryId(null)
+      editorRef.current?.setDoc('')
+      pendingFocusRef.current = true
+      navigate('/')
+    })
+  }, [guardUnsaved])
 
   /** 新建 Prompt：编辑器切到 prompt 形态（软换行 + {{变量}} 占位符），不识别语言 */
   const handleNewPrompt = useCallback(() => {
-    if (contentRef.current.trim() !== '') commitSnapshot()
-    activeEntryIdRef.current = null
-    setActiveEntryId(null)
-    setEditorKind('prompt')
-    setLangId('markdown')
-    setManualOverride(true)
-    editorRef.current?.setDoc('')
-    editorRef.current?.view.focus()
-    if (!historyDockedRef.current) setHistoryOpen(false)
-  }, [commitSnapshot])
+    guardUnsaved(() => {
+      activeEntryIdRef.current = null
+      setActiveEntryId(null)
+      setEditorKind('prompt')
+      setLangId('markdown')
+      setManualOverride(true)
+      editorRef.current?.setDoc('')
+      pendingFocusRef.current = true
+      navigate('/')
+    })
+  }, [guardUnsaved])
+
+  /** 未保存确认对话框的三个去向 */
+  const closePendingNav = useCallback(() => setPendingNav(null), [])
+  const confirmSaveAndContinue = useCallback(() => {
+    const run = pendingNav
+    setPendingNav(null)
+    if (!run) return
+    handleSave()
+    run()
+  }, [pendingNav, handleSave])
+  const confirmDiscard = useCallback(() => {
+    const run = pendingNav
+    setPendingNav(null)
+    run?.()
+  }, [pendingNav])
 
   const handleTogglePin = useCallback((id: string) => {
-    const entry = historyRef.current.find((e) => e.id === id)
+    const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
     storeRef.current.upsert({
       ...entry,
@@ -484,7 +493,7 @@ export default function App() {
 
   /** 「仅本地」开关（§7.4）：已同步条目先向服务端发一次删除再转本地 */
   const handleToggleLocalOnly = useCallback((id: string) => {
-    const entry = historyRef.current.find((e) => e.id === id)
+    const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
     const session = sessionRef.current
     const now = Date.now()
@@ -512,7 +521,7 @@ export default function App() {
   }, [])
 
   const handleTagsChange = useCallback((id: string, tags: string[]) => {
-    const entry = historyRef.current.find((e) => e.id === id)
+    const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
     // 与服务端 schema（tags ≤ 20 个、单个 ≤ 64 字符）对齐：超限的标签若原样入队，
     // sync 会整批 400 且无限重试，堵死后续所有同步
@@ -533,7 +542,7 @@ export default function App() {
   }, [])
 
   const handleCollectionChange = useCallback((id: string, collectionId: number | null) => {
-    const entry = historyRef.current.find((e) => e.id === id)
+    const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
     storeRef.current.upsert({
       ...entry,
@@ -545,7 +554,7 @@ export default function App() {
 
   /** 「导出全部为 JSON」：不做服务端备份之后用户手里唯一的兜底（§10 风险 5） */
   const handleExport = useCallback(() => {
-    const data = historyRef.current.map((s) => ({
+    const data = libraryRef.current.map((s) => ({
       id: s.id,
       kind: s.kind ?? 'command',
       title: s.title,
@@ -654,10 +663,9 @@ export default function App() {
   }, [])
 
   const handleCopy = useCallback(async () => {
-    commitSnapshot()
+    // 手动保存模型：复制不再入库，只提示字符数与未保存状态
     const channel = await copyText(content)
-    const stored = historyEnabledRef.current ? ' · 已存入历史' : ''
-    const note = `${content.length} 字符${stored}`
+    const note = `${content.length} 字符${dirty ? ' · 尚未保存' : ''}`
     if (channel === 'clipboard') showCopyFeedback({ kind: 'ok', text: '已复制到剪贴板', note })
     else if (channel === 'fallback')
       showCopyFeedback({ kind: 'ok', text: '已复制（降级方式）', note })
@@ -667,21 +675,35 @@ export default function App() {
         text: '复制失败，请手动全选后按 Ctrl/Cmd+C',
         note: '',
       })
-  }, [content, showCopyFeedback, commitSnapshot])
+  }, [content, dirty, showCopyFeedback])
 
-  /** 填充并复制（§8 Phase 6）：只影响复制内容，原文不动；记住本次填的值（仅本地） */
+  /** 从详情页复制该条目的已保存内容 */
+  const handleCopyEntry = useCallback(
+    async (entry: Snippet) => {
+      const channel = await copyText(entry.content)
+      if (channel === 'failed') {
+        showToast('复制失败，请手动全选后按 Ctrl/Cmd+C', 'err')
+        return
+      }
+      showToast(`已复制「${entry.title}」（${entry.content.length} 字符）`, 'ok')
+    },
+    [showToast],
+  )
+
+  /** 填充并复制（§8 Phase 6）：只影响复制内容，原文不动；记住本次填的值（仅本地）。
+   *  未保存的新 Prompt 也可填充（以编辑器当前内容为准，记忆挂在空 id 下） */
   const handleFillAndCopy = useCallback(async () => {
-    const entry = activeEntry
-    if (!entry) return
-    rememberVarValues(entry.id, varValues)
-    const filled = fillPromptTemplate(entry.content, varValues)
+    const text = contentRef.current
+    if (editorKindRef.current !== 'prompt' || text.trim() === '') return
+    rememberVarValues(activeEntryIdRef.current ?? '', varValues)
+    const filled = fillPromptTemplate(text, varValues)
     const channel = await copyText(filled)
     if (channel === 'failed') {
       showCopyFeedback({ kind: 'err', text: '复制失败，请手动全选后按 Ctrl/Cmd+C', note: '' })
       return
     }
     showToast(`已按变量填充并复制（${filled.length} 字符）`, 'ok')
-  }, [activeEntry, varValues, showCopyFeedback, showToast])
+  }, [varValues, showCopyFeedback, showToast])
 
   const handleVarChange = useCallback((name: string, value: string) => {
     setVarValues((prev) => ({ ...prev, [name]: value }))
@@ -716,8 +738,8 @@ export default function App() {
   }, [])
 
   const filteredByCollection = activeCollectionId === null
-    ? history
-    : history.filter((s) => s.collectionId === activeCollectionId)
+    ? library
+    : library.filter((s) => s.collectionId === activeCollectionId)
 
   const cloudStatusView: CloudStatusView | undefined =
     import.meta.env.VITE_CLOUD_ENABLED === 'true'
@@ -731,165 +753,209 @@ export default function App() {
       : undefined
 
   const isPrompt = editorKind === 'prompt'
+  // 变量填充条跟随编辑器当前内容（不要求先保存）：prompt 形态下输入 {{变量}} 即出现
   const promptVarNames = useMemo(
-    () => (activeEntry && (activeEntry.kind ?? 'command') === 'prompt' ? parsePromptVariables(activeEntry.content) : []),
-    [activeEntry],
+    () => (isPrompt ? parsePromptVariables(content) : []),
+    [isPrompt, content],
+  )
+
+  const detailEntry =
+    route.view === 'detail' ? (library.find((e) => e.id === route.id) ?? null) : null
+
+  const savedPage = (
+    <SavedPage
+      entries={filteredByCollection}
+      activeId={activeEntryId}
+      onBack={() => navigate('/')}
+      onOpenDetail={(id) => navigate(`${SAVED_PATH}/${encodeURIComponent(id)}`)}
+      onOpenInEditor={handleOpenEntry}
+      onNewPaste={handleNewPaste}
+      onNewPrompt={handleNewPrompt}
+      onDeleteEntry={handleDeleteEntry}
+      onClearAll={handleClearHistory}
+      onTogglePin={handleTogglePin}
+      onExport={handleExport}
+      kindFilter={kindFilter}
+      onKindFilterChange={setKindFilter}
+      cloudMode={cloudUser !== null}
+      collections={collections}
+      activeCollectionId={activeCollectionId}
+      onSelectCollection={setActiveCollectionId}
+      onCreateCollection={handleCreateCollection}
+      onRenameCollection={handleRenameCollection}
+      onDeleteCollection={handleDeleteCollection}
+    />
   )
 
   return (
     <div className="app">
-      <Toolbar
-        langId={langId}
-        langAuto={!manualOverride}
-        manualOverride={manualOverride}
-        onLanguageChange={handleLanguageChange}
-        promptMode={isPrompt}
-        theme={theme}
-        onThemeChange={handleThemeChange}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onToggleHistory={handleToggleHistory}
-        historyOpen={historyOpen}
-        placeholderCount={placeholderCount}
-        onPrevPlaceholder={() => jump(-1)}
-        onNextPlaceholder={() => jump(1)}
-        canCopy={content.length > 0}
-        copied={copyFeedback?.kind === 'ok'}
-        onCopy={() => void handleCopy()}
-        clearArmed={clearArmed}
-        onClear={handleClear}
-        onHelp={() => setHelpOpen(true)}
-        cloudEnabled={import.meta.env.VITE_CLOUD_ENABLED === 'true'}
-        accountLabel={cloudUser ? cloudUser.email.split('@')[0] : null}
-        onOpenAccount={() => setAccountOpen(true)}
-      />
+      {/*
+        编辑器常驻挂载（切到片段库/详情页时仅隐藏），保住 CodeMirror 的
+        光标、撤销历史与滚动位置；「保存到片段库」只在编辑器视图有意义。
+      */}
+      <div className="editor-view" hidden={route.view !== 'editor'}>
+        <Toolbar
+          langId={langId}
+          langAuto={!manualOverride}
+          manualOverride={manualOverride}
+          onLanguageChange={handleLanguageChange}
+          promptMode={isPrompt}
+          theme={theme}
+          onThemeChange={handleThemeChange}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSaved={() => navigate(SAVED_PATH)}
+          savedCount={library.length}
+          saveState={content.trim() === '' ? 'empty' : dirty ? 'dirty' : 'saved'}
+          onSave={handleSave}
+          placeholderCount={placeholderCount}
+          onPrevPlaceholder={() => jump(-1)}
+          onNextPlaceholder={() => jump(1)}
+          canCopy={content.length > 0}
+          copied={copyFeedback?.kind === 'ok'}
+          onCopy={() => void handleCopy()}
+          clearArmed={clearArmed}
+          onClear={handleClear}
+          onHelp={() => setHelpOpen(true)}
+          cloudEnabled={import.meta.env.VITE_CLOUD_ENABLED === 'true'}
+          accountLabel={cloudUser ? cloudUser.email.split('@')[0] : null}
+          onOpenAccount={() => setAccountOpen(true)}
+        />
 
-      {swUpdateReady && (
-        <div className="update-banner" role="status">
-          <span>发现新版本，点击刷新以更新离线缓存</span>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => void window.__vimpasteApplyUpdate?.(true)}
-          >
-            立即刷新
-          </button>
-        </div>
-      )}
-
-      <div className="app-body">
-        {historyOpen && historyDocked && (
-          <HistoryPanel
-            variant="docked"
-            open
-            entries={filteredByCollection}
-            enabled={historyEnabled}
-            activeId={activeEntryId}
-            onClose={() => setHistoryPanelOpen(false)}
-            onOpenEntry={handleOpenEntry}
-            onDeleteEntry={handleDeleteEntry}
-            onClearAll={handleClearHistory}
-            onToggleEnabled={handleHistoryEnabledChange}
-            onNewPaste={handleNewPaste}
-            onNewPrompt={handleNewPrompt}
-            kindFilter={kindFilter}
-            onKindFilterChange={setKindFilter}
-            cloudMode={cloudUser !== null}
-            collections={collections}
-            activeCollectionId={activeCollectionId}
-            onSelectCollection={setActiveCollectionId}
-            onCreateCollection={handleCreateCollection}
-            onRenameCollection={handleRenameCollection}
-            onDeleteCollection={handleDeleteCollection}
-            onTogglePin={handleTogglePin}
-            onExport={handleExport}
-          />
+        {swUpdateReady && (
+          <div className="update-banner" role="status">
+            <span>发现新版本，点击刷新以更新离线缓存</span>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void window.__vimpasteApplyUpdate?.(true)}
+            >
+              立即刷新
+            </button>
+          </div>
         )}
 
-        <main className="editor-area">
-          {!hintDismissed && (
-            <aside className="hint" aria-label="首次使用提示">
-              <span className="hint-flow">
-                粘贴命令 → <kbd>]v</kbd> 跳到变量 → 修改 → 复制
-              </span>
-              <span className="spacer" />
-              <button
-                type="button"
-                className="btn icon hint-close"
-                aria-label="关闭提示"
-                onClick={() => setHintDismissed(true)}
-              >
-                <IconClose size={11} />
-              </button>
-            </aside>
-          )}
-
-          {activeEntry && (
-            <EntryMetaBar
-              entry={activeEntry}
-              collections={collections}
-              onTogglePin={handleTogglePin}
-              onToggleLocalOnly={handleToggleLocalOnly}
-              onTagsChange={handleTagsChange}
-              onCollectionChange={handleCollectionChange}
-            />
-          )}
-
-          {promptVarNames.length > 0 && (
-            <VariableFillBar
-              names={promptVarNames}
-              values={varValues}
-              onChange={handleVarChange}
-              onFillAndCopy={() => void handleFillAndCopy()}
-            />
-          )}
-
-          {/* 复制成功时整框描一圈鼠尾草绿：余光可见，不必回头看按钮 */}
-          <div className={`editor-frame ${copyFeedback?.kind === 'ok' ? 'copied' : ''}`}>
-            <CodeMirrorEditor
-              editorMode={editorMode}
-              onReady={handleReady}
-              callbacks={{
-                onDocChanged: handleDocChanged,
-                onCursor: (line, col) => setCursor({ line, col }),
-                onPlaceholderCount: setPlaceholderCount,
-                onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
-                onPaste: handleEditorPaste,
-              }}
-            />
-          </div>
-
-          {copyFeedback && (
-            <div className={`copy-confirm ${copyFeedback.kind === 'err' ? 'err' : ''}`}>
-              <span className="copy-confirm-mark" aria-hidden="true">
-                {copyFeedback.kind === 'ok' ? <IconCheck size={13} /> : <IconClose size={13} />}
-              </span>
-              {/* 播报主句单独成元素，字符数等补充信息不进无障碍名称 */}
-              <span className="copy-confirm-text" role="status">
-                {copyFeedback.text}
-              </span>
-              {copyFeedback.note !== '' && (
-                <span className="copy-confirm-note" aria-hidden="true">
-                  {copyFeedback.note}
+        <div className="app-body">
+          <main className="editor-area">
+            {!hintDismissed && (
+              <aside className="hint" aria-label="首次使用提示">
+                <span className="hint-flow">
+                  粘贴命令 → <kbd>]v</kbd> 跳到变量 → 修改 → 复制
                 </span>
-              )}
+                <span className="spacer" />
+                <button
+                  type="button"
+                  className="btn icon hint-close"
+                  aria-label="关闭提示"
+                  onClick={() => setHintDismissed(true)}
+                >
+                  <IconClose size={11} />
+                </button>
+              </aside>
+            )}
+
+            {activeEntry && (
+              <EntryMetaBar
+                entry={activeEntry}
+                collections={collections}
+                onTogglePin={handleTogglePin}
+                onToggleLocalOnly={handleToggleLocalOnly}
+                onTagsChange={handleTagsChange}
+                onCollectionChange={handleCollectionChange}
+              />
+            )}
+
+            {promptVarNames.length > 0 && (
+              <VariableFillBar
+                names={promptVarNames}
+                values={varValues}
+                onChange={handleVarChange}
+                onFillAndCopy={() => void handleFillAndCopy()}
+              />
+            )}
+
+            {/* 复制成功时整框描一圈鼠尾草绿：余光可见，不必回头看按钮 */}
+            <div className={`editor-frame ${copyFeedback?.kind === 'ok' ? 'copied' : ''}`}>
+              <CodeMirrorEditor
+                editorMode={editorMode}
+                onReady={handleReady}
+                callbacks={{
+                  onDocChanged: handleDocChanged,
+                  onCursor: (line, col) => setCursor({ line, col }),
+                  onPlaceholderCount: setPlaceholderCount,
+                  onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
+                  onPaste: handleEditorPaste,
+                }}
+              />
             </div>
-          )}
-        </main>
+
+            {copyFeedback && (
+              <div className={`copy-confirm ${copyFeedback.kind === 'err' ? 'err' : ''}`}>
+                <span className="copy-confirm-mark" aria-hidden="true">
+                  {copyFeedback.kind === 'ok' ? <IconCheck size={13} /> : <IconClose size={13} />}
+                </span>
+                {/* 播报主句单独成元素，字符数等补充信息不进无障碍名称 */}
+                <span className="copy-confirm-text" role="status">
+                  {copyFeedback.text}
+                </span>
+                {copyFeedback.note !== '' && (
+                  <span className="copy-confirm-note" aria-hidden="true">
+                    {copyFeedback.note}
+                  </span>
+                )}
+              </div>
+            )}
+          </main>
+        </div>
+
+        <StatusBar
+          editorMode={editorMode}
+          vimMode={vimMode}
+          line={cursor.line}
+          col={cursor.col}
+          langLabel={languageLabel(langId)}
+          chars={content.length}
+          isPrompt={isPrompt}
+          words={countWords(content)}
+          tokensEstimate={estimateTokens(content.length)}
+          saveState={content.trim() === '' ? undefined : dirty ? 'dirty' : 'saved'}
+          cloudStatus={cloudStatusView}
+          onCloudRetry={handleRetrySync}
+        />
       </div>
 
-      <StatusBar
-        editorMode={editorMode}
-        vimMode={vimMode}
-        line={cursor.line}
-        col={cursor.col}
-        langLabel={languageLabel(langId)}
-        chars={content.length}
-        isPrompt={isPrompt}
-        words={countWords(content)}
-        tokensEstimate={estimateTokens(content.length)}
-        cloudStatus={cloudStatusView}
-        onCloudRetry={handleRetrySync}
-      />
+      {route.view === 'saved' && savedPage}
+
+      {route.view === 'detail' &&
+        (detailEntry !== null ? (
+          <SnippetDetailPage
+            entry={detailEntry}
+            collections={collections}
+            onBack={() => navigate(SAVED_PATH)}
+            onOpenInEditor={handleOpenEntry}
+            onCopy={(entry) => void handleCopyEntry(entry)}
+            onTogglePin={handleTogglePin}
+            onDelete={handleDeleteFromDetail}
+          />
+        ) : (
+          <div className="page detail-page">
+            <header className="page-topbar">
+              <button
+                type="button"
+                className="btn ghost"
+                aria-label="返回片段列表"
+                onClick={() => navigate(SAVED_PATH)}
+              >
+                ← <span aria-hidden="true">片段库</span>
+                <span className="en" aria-hidden="true">
+                  Library
+                </span>
+              </button>
+            </header>
+            <div className="history-empty">
+              <span>该条目不存在或已被删除</span>
+            </div>
+          </div>
+        ))}
 
       <SettingsDialog
         open={settingsOpen}
@@ -904,34 +970,20 @@ export default function App() {
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
-      {historyOpen && !historyDocked && (
-        <HistoryPanel
-          variant="drawer"
-          open
-          entries={filteredByCollection}
-          enabled={historyEnabled}
-          activeId={activeEntryId}
-          // 抽屉的 Esc / 遮罩 / ✕ 关闭都只改瞬态，不写 historyPanelOpen
-          onClose={() => setHistoryOpen(false)}
-          onOpenEntry={handleOpenEntry}
-          onDeleteEntry={handleDeleteEntry}
-          onClearAll={handleClearHistory}
-          onToggleEnabled={handleHistoryEnabledChange}
-          onNewPaste={handleNewPaste}
-          onNewPrompt={handleNewPrompt}
-          kindFilter={kindFilter}
-          onKindFilterChange={setKindFilter}
-          cloudMode={cloudUser !== null}
-          collections={collections}
-          activeCollectionId={activeCollectionId}
-          onSelectCollection={setActiveCollectionId}
-          onCreateCollection={handleCreateCollection}
-          onRenameCollection={handleRenameCollection}
-          onDeleteCollection={handleDeleteCollection}
-          onTogglePin={handleTogglePin}
-          onExport={handleExport}
-        />
-      )}
+      <Dialog open={pendingNav !== null} onClose={closePendingNav} title="有未保存的修改">
+        <p className="confirm-text">编辑器里的内容还没有保存到片段库，继续操作将丢弃这些修改。</p>
+        <div className="dialog-actions">
+          <button type="button" className="btn primary" onClick={confirmSaveAndContinue}>
+            保存并继续
+          </button>
+          <button type="button" className="btn danger" onClick={confirmDiscard}>
+            不保存
+          </button>
+          <button type="button" className="btn ghost" onClick={closePendingNav}>
+            取消
+          </button>
+        </div>
+      </Dialog>
 
       {AccountDialog && accountOpen && (
         <Suspense fallback={null}>

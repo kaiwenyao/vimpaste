@@ -8,6 +8,6 @@
 @import './base.css';
 @import './toolbar.css';
 @import './editor.css';
-@import './history.css';
+@import './saved.css';
 @import './dialog.css';
 @import './status.css';

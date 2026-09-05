@@ -9,7 +9,7 @@ import {
   IconChevronRight,
   IconCopy,
   IconHelp,
-  IconHistory,
+  IconSave,
   IconSettings,
   IconUser,
 } from './icons'
@@ -24,8 +24,13 @@ export interface ToolbarProps {
   theme: ThemeId
   onThemeChange: (theme: ThemeId) => void
   onOpenSettings: () => void
-  onToggleHistory: () => void
-  historyOpen: boolean
+  /** 打开「已保存」片段库页面 */
+  onOpenSaved: () => void
+  /** 片段库条数（按钮上的角标） */
+  savedCount?: number
+  /** 手动保存三态：empty=无可保存内容；dirty=有未保存修改；saved=当前内容已入库 */
+  saveState: 'empty' | 'dirty' | 'saved'
+  onSave: () => void
   placeholderCount: number
   onPrevPlaceholder: () => void
   onNextPlaceholder: () => void
@@ -44,7 +49,7 @@ export interface ToolbarProps {
 
 /**
  * 工具栏按「身份 → 内容属性 → 待办 → 动作」排序（设计稿 1a）：
- * 品牌、历史、语言在左，中间是待替换计数与前后跳转，右侧只留帮助/设置/主题/清空/复制。
+ * 品牌、片段库、语言在左，中间是待替换计数与前后跳转，右侧只留帮助/设置/主题/清空/保存/复制。
  * 英文副标与快捷键提示都是 aria-hidden 的装饰，可访问名称仍是稳定的中文标签。
  */
 export function Toolbar(props: ToolbarProps) {
@@ -57,8 +62,10 @@ export function Toolbar(props: ToolbarProps) {
     theme,
     onThemeChange,
     onOpenSettings,
-    onToggleHistory,
-    historyOpen,
+    onOpenSaved,
+    savedCount,
+    saveState,
+    onSave,
     placeholderCount,
     onPrevPlaceholder,
     onNextPlaceholder,
@@ -95,15 +102,13 @@ export function Toolbar(props: ToolbarProps) {
       <button
         type="button"
         className="btn"
-        aria-label="历史记录"
-        title="粘贴历史（保存在本浏览器）"
-        aria-expanded={historyOpen}
-        onClick={onToggleHistory}
+        aria-label="已保存片段"
+        title="查看手动保存的片段库"
+        onClick={onOpenSaved}
       >
-        <IconHistory />
-        <span aria-hidden="true">历史</span>
+        <span aria-hidden="true">已保存{typeof savedCount === 'number' ? ` · ${savedCount}` : ''}</span>
         <span className="en" aria-hidden="true">
-          History
+          Saved
         </span>
       </button>
 
@@ -218,6 +223,26 @@ export function Toolbar(props: ToolbarProps) {
         {!clearArmed && (
           <span className="en" aria-hidden="true">
             Clear
+          </span>
+        )}
+      </button>
+
+      <button
+        type="button"
+        className={`btn save-btn ${saveState === 'saved' ? 'sage' : ''}`}
+        disabled={saveState !== 'dirty'}
+        onClick={onSave}
+        aria-label="保存到片段库"
+        title="保存到片段库（Ctrl/Cmd+S）"
+      >
+        {saveState === 'saved' ? <IconCheck size={15} /> : <IconSave size={15} />}
+        <span aria-hidden="true">{saveState === 'saved' ? '已保存' : '保存'}</span>
+        <span className="en" aria-hidden="true">
+          {saveState === 'saved' ? 'Saved' : 'Save'}
+        </span>
+        {saveState === 'dirty' && (
+          <span className="kbd" aria-hidden="true">
+            ⌘S
           </span>
         )}
       </button>

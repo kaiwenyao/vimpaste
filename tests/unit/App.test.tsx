@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App'
@@ -22,14 +22,15 @@ function getDoc(): string {
   return window.__vimpaste?.getDoc() ?? ''
 }
 
-/** 打开历史面板并返回它 */
-async function openHistory(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: '历史记录' }))
-  return screen.getByRole('dialog', { name: '粘贴历史' })
+/** 点击工具栏「已保存片段」并等待片段库页面出现 */
+async function openSaved(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '已保存片段' }))
+  return await screen.findByRole('heading', { name: '已保存' })
 }
 
 beforeEach(() => {
   localStorage.clear()
+  window.location.hash = ''
   delete document.documentElement.dataset.theme
   document.documentElement.style.removeProperty('--editor-font-size')
 })
@@ -50,8 +51,10 @@ describe('App 基础渲染与可访问性', () => {
     expect(screen.getByText('VimPaste')).toBeInTheDocument()
     expect(screen.getByText('Local only · 未上传')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '历史记录' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '已保存片段' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeDisabled()
+    // 手动保存模型：编辑器为空时保存不可用
+    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '清空编辑器' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '快捷键帮助' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '语言' })).toBeInTheDocument()
@@ -74,7 +77,7 @@ describe('App 基础渲染与可访问性', () => {
     expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').theme).toBe('light')
 
     setDoc(K3S)
-    // 编辑内容不允许出现在偏好键里（历史内容按功能要求存放在历史键中）
+    // 编辑内容不允许出现在偏好键里（片段内容按功能要求存放在历史键中）
     expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('YOUR_TOKEN')
 
     // "刷新"：重挂载后主题保留
@@ -112,7 +115,7 @@ describe('设置面板', () => {
     expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').editorMode).toBe('standard')
 
     setDoc(K3S)
-    // 编辑内容不允许出现在偏好键里（历史内容按功能要求存放在历史键中）
+    // 编辑内容不允许出现在偏好键里（片段内容按功能要求存放在历史键中）
     expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('YOUR_TOKEN')
     expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('k3s')
     unmount()
@@ -271,7 +274,7 @@ describe('复制与隐私', () => {
     // 修改一个偏好（切换到普通编辑器模式）
     await openSettings(user)
     await user.click(screen.getByRole('radio', { name: /普通编辑器/ }))
-    // 偏好键永远不含编辑内容（历史内容按功能要求存放在历史键中）
+    // 偏好键永远不含编辑内容（片段内容按功能要求存放在历史键中）
     expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('YOUR_TOKEN')
     expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('k3s')
     unmount()
@@ -283,43 +286,29 @@ describe('复制与隐私', () => {
   })
 })
 
-describe('粘贴历史', () => {
-  it('默认开启：内容防抖写入历史键，面板可见并可恢复；刷新后编辑器从空白开始', async () => {
+describe('手动保存（唯一的入库入口）', () => {
+  it('无自动保存：编辑不落盘；点「保存」写入；状态栏在 未保存/已保存 间切换', async () => {
     const user = userEvent.setup()
-    const { unmount } = render(<App />)
-    setDoc(K3S)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
-      },
-      { timeout: 3000 },
-    )
-    expect(localStorage.getItem(PREFS_KEY) ?? '').not.toContain('YOUR_TOKEN')
-    unmount()
-
-    // "刷新"：编辑器为空，历史仍在
     render(<App />)
-    expect(getDoc()).toBe('')
-    const panel = await openHistory(user)
-    await waitFor(() => {
-      expect(panel.querySelector('.history-item')).not.toBeNull()
-    })
-    expect(panel.textContent).toContain('curl -sfL https://get.k3s.io')
-    expect(panel.querySelector('.history-row.active')).toBeNull()
+    setDoc(K3S)
+    // 不再有任何防抖自动保存：编辑后存储保持为空
+    await new Promise((r) => setTimeout(r, 1900))
+    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
 
-    // 点击恢复：编辑器内容与历史条目一致
-    await user.click(within(panel).getByRole('button', { name: /^curl -sfL/ }))
-    await waitFor(() => {
-      expect(getDoc()).toBe(K3S)
-    })
-    expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
-    // jsdom 的 matchMedia 桩为窄视口行为：点击条目后抽屉自动收起，重新打开可见高亮
-    await user.click(screen.getByRole('button', { name: '历史记录' }))
-    const reopened = screen.getByRole('dialog', { name: '粘贴历史' })
-    expect(reopened.querySelector('.history-row.active')).not.toBeNull()
+    // 状态栏提示未保存
+    expect(screen.getByText('未保存')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    expect(await screen.findByText('已保存到片段库')).toBeInTheDocument()
+    expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
+    // 状态栏与工具栏保存按钮都进入「已保存」（两处， getAllByText）
+    expect(screen.getAllByText('已保存').length).toBeGreaterThanOrEqual(1)
+    // 已保存且无修改：按钮回到禁用态
+    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeDisabled()
   })
 
-  it('复制时立即落盘历史（不等待防抖）', async () => {
+  it('复制不再写入片段库（note 提示尚未保存）', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
@@ -327,97 +316,193 @@ describe('粘贴历史', () => {
     setDoc(K3S)
     const copyBtn = screen.getByRole('button', { name: '复制' })
     await waitFor(() => expect(copyBtn).toBeEnabled())
-    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
     await user.click(copyBtn)
-    expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
     expect(await screen.findByRole('status')).toHaveTextContent('已复制到剪贴板')
+    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
   })
 
-  it('编辑同一内容持续更新当前条目；清空后重新粘贴新内容产生新条目', async () => {
+  it('Ctrl/Cmd+S 保存；无修改时按键不重复写入', () => {
     render(<App />)
     setDoc(K3S)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
-      },
-      { timeout: 3000 },
-    )
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
+
+    const first = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
+    expect(first).toHaveLength(1)
+    // 无修改再按：不产生新条目、不刷新 updatedAt 相关副作用导致条目翻倍
+    fireEvent.keyDown(window, { key: 's', metaKey: true })
+    const again = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
+    expect(again).toHaveLength(1)
+  })
+
+  it('持续保存更新当前条目；清空后保存另一段内容产生新条目', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
     setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('MY_TOKEN')
-      },
-      { timeout: 3000 },
-    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
     let list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(list).toHaveLength(1)
 
-    // 清空（两步确认）→ 粘贴另一段内容 → 第二条
-    const user = userEvent.setup()
+    // 清空（两步确认）→ 保存另一段内容 → 第二条
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     setDoc('docker run -d -p 80:80 nginx')
-    await waitFor(
-      () => {
-        list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
-        expect(list).toHaveLength(2)
-      },
-      { timeout: 3000 },
-    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
+    expect(list).toHaveLength(2)
     const titles = (list as { title: string }[]).map((e) => e.title)
     expect(titles.some((t) => t.startsWith('docker run'))).toBe(true)
     expect(titles.some((t) => t.startsWith('curl -sfL'))).toBe(true)
-  }, 20_000)
+  })
 
-  it('在当前条目上粘贴全新内容时产生新条目，不覆盖旧条目', async () => {
+  it('在当前条目上粘贴全新内容后保存产生新条目，不覆盖旧条目', async () => {
+    const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
-      },
-      { timeout: 3000 },
-    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
     // 模拟选中全部后直接粘贴新命令（不清空）：编辑器触发 paste 事件
     const cmContent = document.querySelector('.cm-content')
     expect(cmContent).not.toBeNull()
     fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
     setDoc('kubectl get nodes -o wide')
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('kubectl')
-      },
-      { timeout: 3000 },
-    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
     expect(list).toHaveLength(2)
     expect(list.map((e) => e.title).some((t) => t.startsWith('curl -sfL'))).toBe(true)
     expect(list.map((e) => e.title).some((t) => t.startsWith('kubectl'))).toBe(true)
-  }, 20_000)
+  })
 
   it('与最近一条内容相同时复用条目，不重复堆积', async () => {
+    const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
-      },
-      { timeout: 3000 },
-    )
-    // 清空再粘贴相同内容：仍只有一条
-    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    // 清空再粘贴相同内容后保存：仍只有一条
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     setDoc(K3S)
     await waitFor(() => {
       expect(getDoc()).toBe(K3S)
     })
-    await new Promise((r) => setTimeout(r, 1800))
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(list).toHaveLength(1)
   })
 
-  it('可删除单条历史', async () => {
+  it('有未保存修改时打开条目先确认：「保存并继续」先入库再载入新条目', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    // 先入库两条
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await user.click(screen.getByRole('button', { name: '清空编辑器' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
+    setDoc('docker run -d -p 80:80 nginx')
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+
+    // 修改当前条目（产生未保存修改），然后从片段库打开另一条
+    setDoc('docker run -d -p 80:80 nginx --restart=always')
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }))
+    const dialog = screen.getByRole('dialog', { name: '有未保存的修改' })
+    expect(dialog).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: '保存并继续' }))
+
+    // 修改先入库，随后载入 curl 条目
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { content: string }[]
+    expect(list.some((e) => e.content.includes('--restart=always'))).toBe(true)
+    expect(getDoc()).toBe(K3S)
+  })
+
+  it('确认对话框选「不保存」：丢弃修改并继续；「取消」原地不动', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    setDoc(K3S.replace('YOUR_TOKEN', 'CHANGED_TOKEN'))
+
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }))
+    const dialog = screen.getByRole('dialog', { name: '有未保存的修改' })
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    // 取消：内容原封不动，仍在编辑器里
+    expect(getDoc()).toBe(K3S.replace('YOUR_TOKEN', 'CHANGED_TOKEN'))
+    expect(screen.queryByRole('dialog', { name: '有未保存的修改' })).not.toBeInTheDocument()
+
+    // 再次触发并放弃：修改丢失，条目保持已保存版本
+    await user.click(screen.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '有未保存的修改' })).getByRole('button', {
+        name: '不保存',
+      }),
+    )
+    expect(getDoc()).toBe(K3S)
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { content: string }[]
+    expect(list).toHaveLength(1)
+    expect(list[0].content).toBe(K3S)
+  })
+})
+
+describe('「已保存」片段库页面与详情页', () => {
+  it('保存 → 打开片段库 → 点条目进详情 → 详情展示完整元信息与全文', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    // 等语言识别完成再保存：详情页的语言字段才断言得到 Shell
+    await waitFor(
+      () => {
+        expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
+      },
+      { timeout: 3000 },
+    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await openSaved(user)
+
+    expect(screen.getByText('1 条')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^curl -sfL/ })).toBeInTheDocument()
+
+    // 点击行 → 详情页
+    await user.click(screen.getByRole('button', { name: /^curl -sfL/ }))
+    expect(await screen.findByRole('button', { name: '返回片段列表' })).toBeInTheDocument()
+    expect(screen.getByText('命令')).toBeInTheDocument()
+    // 隐藏的编辑器状态栏也渲染了语言名，用选择器限定详情页网格
+    expect(screen.getByText('Shell / Bash', { selector: 'dd' })).toBeInTheDocument()
+    expect(screen.getByText(String(K3S.length), { selector: 'dd' })).toBeInTheDocument()
+    expect(screen.getByText(String(K3S.split('\n').length), { selector: 'dd' })).toBeInTheDocument()
+    expect(screen.getByText('仅保存在本机')).toBeInTheDocument()
+    const pre = screen.getByRole('region', { name: '片段内容' }).querySelector('pre')
+    expect(pre?.textContent).toBe(K3S)
+
+    // 返回列表 → 返回编辑器
+    await user.click(screen.getByRole('button', { name: '返回片段列表' }))
+    await user.click(await screen.findByRole('button', { name: '返回编辑器' }))
+    await waitFor(() => {
+      expect(getDoc()).toBe(K3S)
+    })
+  })
+
+  it('详情页「在编辑器中打开」直接载入条目并回到编辑器', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await user.click(screen.getByRole('button', { name: '清空编辑器' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
+    expect(getDoc()).toBe('')
+
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: /^curl -sfL/ }))
+    await user.click(await screen.findByRole('button', { name: '在编辑器中打开' }))
+    await waitFor(() => {
+      expect(getDoc()).toBe(K3S)
+    })
+    // 载入的条目成为活动条目：状态栏与保存按钮显示已保存
+    expect(screen.getAllByText('已保存').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('片段库中删除单条与清空全部', async () => {
     const user = userEvent.setup()
     localStorage.setItem(
       HISTORY_KEY,
@@ -441,196 +526,54 @@ describe('粘贴历史', () => {
       ]),
     )
     render(<App />)
-    const panel = await openHistory(user)
-    await user.click(within(panel).getByRole('button', { name: '删除「curl 命令」' }))
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
     expect(localStorage.getItem(HISTORY_KEY)).not.toContain('curl example.com')
     expect(localStorage.getItem(HISTORY_KEY)).toContain('docker ps')
-  })
 
-  it('清空全部历史：面板清空、存储移除', async () => {
-    const user = userEvent.setup()
-    localStorage.setItem(
-      HISTORY_KEY,
-      JSON.stringify([
-        {
-          id: 'a',
-          title: 'curl 命令',
-          content: 'curl example.com',
-          langId: 'shell',
-          createdAt: 1,
-          updatedAt: Date.now(),
-        },
-      ]),
-    )
-    render(<App />)
-    await openHistory(user)
-    await user.click(screen.getByRole('button', { name: '清空全部历史' }))
-    await user.click(screen.getByRole('button', { name: '确认清空全部历史' }))
+    await user.click(screen.getByRole('button', { name: '清空全部片段' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部片段' }))
     expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
-    expect(screen.getByRole('dialog', { name: '粘贴历史' }).textContent).toContain('暂无历史记录')
+    expect(screen.getByText('还没有保存过任何内容')).toBeInTheDocument()
   })
 
-  it('关闭自动保存：立即清空历史且不再写入；重新打开后恢复保存', async () => {
+  it('保存 → 刷新：编辑器为空，片段仍在库中且可恢复', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<App />)
+    setDoc(K3S)
+    // 等语言识别完成再保存：条目带 shell 语言
+    await waitFor(
+      () => {
+        expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
+      },
+      { timeout: 3000 },
+    )
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    unmount()
+
+    // "刷新"：编辑器从空白开始，片段库保留
+    render(<App />)
+    expect(getDoc()).toBe('')
+    await openSaved(user)
+    expect(screen.getByRole('button', { name: /^curl -sfL/ })).toBeInTheDocument()
+
+    // 从片段库恢复到编辑器
+    await user.click(screen.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }))
+    await waitFor(() => {
+      expect(getDoc()).toBe(K3S)
+    })
+    expect(screen.getByRole('combobox', { name: '语言' })).toHaveValue('shell')
+  })
+
+  it('编辑器视图在切页期间保持挂载：返回后内容不丢', async () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
-      },
-      { timeout: 3000 },
-    )
-
-    await openHistory(user)
-    await user.click(screen.getByRole('switch', { name: '自动保存' }))
-    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyEnabled).toBe(false)
-
-    // 关闭状态下编辑不再写入
-    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
-    await new Promise((r) => setTimeout(r, 1900))
-    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
-
-    // 重新打开后恢复写入
-    await user.click(screen.getByRole('switch', { name: '自动保存' }))
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyEnabled).toBe(true)
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(HISTORY_KEY)).toContain('MY_TOKEN')
-      },
-      { timeout: 3000 },
-    )
-  }, 20_000)
-})
-
-describe('粘贴历史固定面板（宽视口）', () => {
-  /** jsdom 的 matchMedia 桩 matches 恒为 false（窄视口行为）；宽视口用例显式覆盖 */
-  function stubWideViewport() {
-    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => {
-      void query
-      return {
-        matches: true,
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      } as unknown as MediaQueryList
-    })
-  }
-
-  it('面板默认固定展示（complementary 语义），点击条目保持打开并高亮，Esc 不关闭', async () => {
-    stubWideViewport()
-    const user = userEvent.setup()
-    localStorage.setItem(
-      HISTORY_KEY,
-      JSON.stringify([
-        {
-          id: 'a',
-          title: 'curl 命令',
-          content: 'curl example.com',
-          langId: 'shell',
-          createdAt: 1,
-          updatedAt: Date.now(),
-        },
-      ]),
-    )
-    render(<App />)
-
-    // 宽视口下面板默认展示，无需点击工具栏按钮
-    const panel = screen.getByRole('complementary', { name: '粘贴历史' })
-    expect(within(panel).getByRole('button', { name: /^curl 命令/ })).toBeInTheDocument()
-
-    // 点击条目：内容恢复，面板保持打开且条目高亮
-    await user.click(within(panel).getByRole('button', { name: /^curl 命令/ }))
+    await openSaved(user)
+    // 切到片段库再返回：编辑器内容保持
+    await user.click(screen.getByRole('button', { name: '返回编辑器' }))
     await waitFor(() => {
-      expect(getDoc()).toBe('curl example.com')
+      expect(getDoc()).toBe(K3S)
     })
-    expect(panel.querySelector('.history-row.active')).not.toBeNull()
-
-    // Esc 属于 Vim 按键，固定面板不响应
-    await user.keyboard('{Escape}')
-    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
-  })
-
-  it('工具栏按钮切换显隐并持久化（historyPanelOpen）', async () => {
-    stubWideViewport()
-    const user = userEvent.setup()
-    render(<App />)
-    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '历史记录' }))
-    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
-
-    await user.click(screen.getByRole('button', { name: '历史记录' }))
-    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
-  })
-
-  it('窄视口抽屉开合是瞬态：打开与 Esc 关闭都不写 historyPanelOpen', async () => {
-    // jsdom 默认 matchMedia 桩即窄视口行为（matches 恒为 false）
-    const user = userEvent.setup()
-    // 模拟桌面端用户此前隐藏过面板
-    localStorage.setItem(
-      PREFS_KEY,
-      JSON.stringify({
-        editorMode: 'vim',
-        fontSize: 14,
-        hintDismissed: true,
-        theme: 'dark',
-        historyEnabled: true,
-        historyPanelOpen: false,
-      }),
-    )
-    render(<App />)
-    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '历史记录' }))
-    expect(screen.getByRole('dialog', { name: '粘贴历史' })).toBeInTheDocument()
-
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
-    // 桌面端的隐藏偏好未被窄视口的开合覆盖
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(false)
-  })
-
-  it('视口跨越断点时按偏好重同步显隐，且不写偏好', () => {
-    const listeners: Array<(e: MediaQueryListEvent) => void> = []
-    const raw = {
-      matches: true,
-      media: '(min-width: 768px)',
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn((_: string, listener: (e: MediaQueryListEvent) => void) => {
-        listeners.push(listener)
-      }),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }
-    vi.spyOn(window, 'matchMedia').mockReturnValue(raw as unknown as MediaQueryList)
-    render(<App />)
-    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
-
-    // 拖窄：固定面板收起，抽屉也不自动弹出（不遮挡编辑器）
-    act(() => {
-      raw.matches = false
-      listeners.forEach((l) => l({ matches: false } as MediaQueryListEvent))
-    })
-    expect(screen.queryByRole('complementary', { name: '粘贴历史' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: '粘贴历史' })).not.toBeInTheDocument()
-
-    // 拖宽：按已存偏好恢复固定面板
-    act(() => {
-      raw.matches = true
-      listeners.forEach((l) => l({ matches: true } as MediaQueryListEvent))
-    })
-    expect(screen.getByRole('complementary', { name: '粘贴历史' })).toBeInTheDocument()
-
-    // 全程只改瞬态，未覆盖偏好
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').historyPanelOpen).toBe(true)
   })
 })

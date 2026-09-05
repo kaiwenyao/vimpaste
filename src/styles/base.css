@@ -63,7 +63,7 @@ input:focus-visible,
 /* 主题切换时表面颜色平滑过渡（body 背景需即时切换，见 theme e2e 断言） */
 .toolbar,
 .statusbar,
-.history-panel,
+.page,
 .dialog,
 .hint,
 .update-banner {
@@ -322,7 +322,6 @@ kbd,
   .dialog,
   .dialog-backdrop,
   .toast,
-  .history-panel.drawer,
   .copy-confirm {
     animation: none;
   }
