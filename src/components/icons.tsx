@@ -33,6 +33,17 @@ export function IconHistory(props: IconProps) {
   )
 }
 
+/** 保存：箭头落入托盘（手动保存到片段库） */
+export function IconSave(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3v10" />
+      <path d="m7.5 9 4.5 4.5L16.5 9" />
+      <path d="M4 15v3.4A2.6 2.6 0 0 0 6.6 21h10.8a2.6 2.6 0 0 0 2.6-2.6V15" />
+    </svg>
+  )
+}
+
 export function IconSettings(props: IconProps) {
   return (
     <svg {...base(props)}>

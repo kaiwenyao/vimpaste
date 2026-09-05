@@ -12,6 +12,8 @@ export interface StatusBarProps {
   isPrompt?: boolean
   words?: number
   tokensEstimate?: number
+  /** 手动保存状态：内容非空时展示「未保存 / 已保存」；undefined = 编辑器为空，不展示 */
+  saveState?: 'dirty' | 'saved'
   /** 云端同步状态（VITE_CLOUD_ENABLED 时由 App 传入；缺省 = 匿名本地版，文案不动） */
   cloudStatus?: CloudStatusView
   onCloudRetry?: () => void
@@ -89,6 +91,7 @@ export function StatusBar({
   isPrompt,
   words,
   tokensEstimate,
+  saveState,
   cloudStatus,
   onCloudRetry,
 }: StatusBarProps) {
@@ -116,6 +119,15 @@ export function StatusBar({
         </>
       ) : (
         <span className="status-item">{chars} 字符</span>
+      )}
+      {saveState && (
+        <span
+          className={`save-state ${saveState === 'dirty' ? 'dirty' : 'clean'}`}
+          title={saveState === 'dirty' ? '内容尚未保存，Ctrl/Cmd+S 或点「保存」入库' : '当前内容已保存到片段库'}
+        >
+          <span className="save-state-dot" aria-hidden="true" />
+          {saveState === 'dirty' ? '未保存' : '已保存'}
+        </span>
       )}
       <span className="spacer" />
       {cloudStatus ? (

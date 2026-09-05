@@ -29,3 +29,11 @@ export function historyGroupLabel(ts: number, now = Date.now()): string {
   if (ts >= t0 - 30 * DAY) return '30 天内'
   return '更早'
 }
+
+/** 绝对时间：详情页等需要精确时刻的场景（2026 年 9 月 5 日 14:30） */
+export function formatFullTime(ts: number): string {
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hh}:${mm}`
+}
