@@ -164,9 +164,12 @@ spec:
                         done
                     '''
                     echo '正在应用测试库迁移...'
-                    sh 'cd server && TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npx prisma migrate deploy'
+                    // Prisma CLI 从 schema.prisma 的 env("DATABASE_URL") 读取迁移目标；
+                    // TEST_DATABASE_URL 仅供 Vitest 的测试辅助代码使用。
+                    sh 'cd server && DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npx prisma migrate deploy'
                     echo '正在运行 server 集成测试（Vitest + Prisma）...'
-                    sh 'cd server && TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npm test -- --run'
+                    // server/package.json 的 test 脚本已经是 vitest --run，不能重复传 --run。
+                    sh 'cd server && TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npm test'
                 }
             }
         }
