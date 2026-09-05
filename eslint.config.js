@@ -13,6 +13,8 @@ export default tseslint.config(
       'node_modules/**',
       'playwright-report/**',
       'test-results/**',
+      // server/ 是独立 npm 包，用自己的 eslint 配置（Node 全局），根检查不进入
+      'server/**',
     ],
   },
   js.configs.recommended,

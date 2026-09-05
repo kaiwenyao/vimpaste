@@ -1,0 +1,41 @@
+{
+  "name": "@vimpaste/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "VimPaste v2 API：账号、片段库与同步（Fastify + Prisma + PostgreSQL）",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -b",
+    "test": "vitest --run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "create-user": "tsx src/scripts/create-user.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^10.2.2",
+    "@node-rs/argon2": "^2.0.2",
+    "@prisma/client": "^6.16.2",
+    "fastify": "^5.3.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}
