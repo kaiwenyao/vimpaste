@@ -1,14 +1,23 @@
 apiVersion: v1
 kind: Service
+
 metadata:
+  # 无头 Service：单副本 StatefulSet 走 Pod DNS 即可；api 通过
+  # DATABASE_URL 里的主机名 vimpaste-postgres 连接
   name: vimpaste-postgres
+  namespace: dev
+
   labels:
     app: vimpaste-postgres
+
 spec:
   clusterIP: None
+
   selector:
     app: vimpaste-postgres
+
   ports:
     - name: pg
+      protocol: TCP
       port: 5432
       targetPort: 5432

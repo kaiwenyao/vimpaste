@@ -2,7 +2,7 @@
 
 本目录是 v2（账号 + 片段库 API）的 Kubernetes 清单**参考副本**。
 GitOps 的唯一事实来源仍是 [kaiwenyao/k3s-home](https://github.com/kaiwenyao/k3s-home)
-仓库的 `apps/vimpaste/`（web）与 `apps/vimpaste-api/`（api）——
+仓库的 `apps/vimpaste/`（web + api 全部清单在同一目录）——
 Jenkins 的 GitOps 阶段只更新那边的镜像行。本目录与 GitOps 清单保持同步，
 但部署时以 k3s-home 为准。
 

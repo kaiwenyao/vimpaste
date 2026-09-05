@@ -285,15 +285,9 @@ EOF
                               "s#image: ghcr.io/kaiwenyao/vimpaste:.*#image: ${NEW_IMAGE}#" \
                               gitops-repo/apps/vimpaste/deployment.yaml
 
-                            # v2 API 清单尚未合入 k3s-home 时跳过（合并本 PR 后把
-                            # deploy/k3s/ 的清单拷入 k3s-home 即启用）
-                            if [ -f gitops-repo/apps/vimpaste-api/deployment.yaml ]; then
-                                sed -i \
-                                  "s#image: ghcr.io/kaiwenyao/vimpaste-api:.*#image: ${NEW_API_IMAGE}#" \
-                                  gitops-repo/apps/vimpaste-api/deployment.yaml
-                            else
-                                echo "k3s-home 暂无 apps/vimpaste-api/deployment.yaml，跳过 API 镜像更新"
-                            fi
+                            sed -i \
+                              "s#image: ghcr.io/kaiwenyao/vimpaste-api:.*#image: ${NEW_API_IMAGE}#" \
+                              gitops-repo/apps/vimpaste/api-deployment.yaml
 
                             if git -C gitops-repo diff --quiet; then
                                 echo "GitOps 清单已经是当前镜像，无需更新"
@@ -303,7 +297,7 @@ EOF
                             git -C gitops-repo config user.name "Jenkins"
                             git -C gitops-repo config user.email "jenkins@vimpaste.local"
 
-                            git -C gitops-repo add apps/vimpaste apps/vimpaste-api 2>/dev/null || git -C gitops-repo add apps/vimpaste
+                            git -C gitops-repo add apps/vimpaste
                             git -C gitops-repo commit -m "deploy(vimpaste): ${NEW_IMAGE##*:}"
 
                             GIT_ASKPASS=/tmp/git-askpass.sh \

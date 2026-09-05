@@ -1,14 +1,23 @@
-# web 的 nginx 通过该 Service 反代 /api/（见根目录 nginx.conf）
+# web 的 nginx 通过该 Service 同命名空间反代 /api/（VimPaste 仓库根目录 nginx.conf
+# 的 proxy_pass http://vimpaste-api:3000）。不要改名或跨命名空间。
 apiVersion: v1
 kind: Service
+
 metadata:
   name: vimpaste-api
+  namespace: dev
+
   labels:
     app: vimpaste-api
+
 spec:
+  type: ClusterIP
+
   selector:
     app: vimpaste-api
+
   ports:
     - name: http
+      protocol: TCP
       port: 3000
       targetPort: 3000
