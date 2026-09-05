@@ -40,7 +40,12 @@ npm run lint          # ESLint
 npm run typecheck     # TypeScript 严格模式类型检查
 npm test -- --run     # Vitest 单元测试（检测规则、复制一致性、持久化、组件可访问性）
 npm run build         # 类型检查 + 生产构建 + 构建产物与包体积检查
-npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、粘贴历史、桌面/移动视口、离线）
+npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、粘贴历史、Prompt 片段、桌面/移动视口、离线）
+
+# 服务端（自托管 API，需要 Docker 提供 Postgres，见 docs/self-hosting.md）
+cd server
+npm run lint && npm run typecheck
+TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@localhost:5432/vimpaste_test npm test -- --run
 ```
 
 首次运行端到端测试前需要安装浏览器：`npx playwright install chromium`。
@@ -49,13 +54,20 @@ npm run test:e2e      # Playwright 端到端（K3s 核心流程、Vim 操作、�
 
 `npm run build` 产出 `dist/`（`base` 为 `/vimpaste/` 仓库子路径）。推送到 `main` 后 GitHub Actions 自动执行质量检查并部署到 GitHub Pages（`.github/workflows/deploy.yml`），部署目标为 Pages 的「GitHub Actions」来源。也可以手动 `npm run build && npm run preview` 在本地验证生产构建。
 
+## 两种形态：匿名本地版与自托管登录版
+
+- **匿名本地版**（本仓库 GitHub Pages 演示）：无后端、无账号，功能即上文所列，右下角固定显示 `Local only · 未上传`。
+- **自托管登录版**（Docker 镜像 / k3s）：在匿名版之上提供**账号 + 云端片段库**——登录后片段同步到你自己的服务器，支持跨设备、搜索、集合、标签、置顶；新增 **Prompt 类型**片段（软换行、`{{变量}}` 占位符、变量填充并一键复制给 LLM）；未登录时与匿名版行为完全一致。
+
+自托管部署见 [docs/self-hosting.md](docs/self-hosting.md)。
+
 ## 隐私说明
 
-- 编辑、语言识别、占位符标记、语法高亮、复制全部在浏览器本地完成，没有后端服务器。
+- 编辑、语言识别、占位符标记、语法高亮、复制全部在浏览器本地完成；匿名本地版没有后端服务器。
 - 编辑内容不会写入 URL、sessionStorage、IndexedDB、日志，也不发送到网络。
 - **粘贴历史**（默认开启）会把编辑内容快照保存在本浏览器 localStorage（键 `vimpaste.history.v1`），便于下次查看和恢复；可在历史面板中搜索、删除单条或清空全部，也可以关闭「自动保存」（关闭即清空，之后不再写入）。
-- 另在 localStorage 保存六个非敏感偏好：键位模式、字体大小、首次提示是否已关闭、颜色主题、粘贴历史开关、历史面板显隐。
-- 界面右下角固定显示 `Local only · 未上传`。
+- 另在 localStorage 保存非敏感偏好：键位模式、字体大小、首次提示是否已关闭、颜色主题、粘贴历史开关、历史面板显隐。
+- 自托管登录版的隐私边界（服务端明文存储、「仅本地」条目、同步的数据流）与匿名版分开说明，见 [docs/privacy.md](docs/privacy.md)。
 - 注意：浏览器扩展或操作系统级剪贴板同步不在本应用控制范围内；在本机共用浏览器账号的其他人可以看到历史记录，敏感内容请使用后清空。
 - 详细说明见 [docs/privacy.md](docs/privacy.md)。
 

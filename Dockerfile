@@ -20,6 +20,12 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
+# v2 云端开关：Docker 镜像（自托管版）设为 true；GitHub Pages 不走 Docker，
+# 保持 false——构建期 define 替换后云端代码整体摇掉（见 src/cloud/flag.ts）
+ARG VITE_CLOUD_ENABLED=true
+ENV VITE_CLOUD_ENABLED=${VITE_CLOUD_ENABLED}
+
 RUN npx tsc -b && npx vite build --base=/ && node scripts/check-build.mjs
 
 # ---------- 阶段二：运行 ----------

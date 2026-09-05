@@ -33,5 +33,15 @@ services:
       postgres:
         condition: service_healthy
 
+  web:
+    # 前端静态托管 + /api/ 同源反代（nginx.conf）；镜像默认 VITE_CLOUD_ENABLED=true
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+
 volumes:
   pgdata:

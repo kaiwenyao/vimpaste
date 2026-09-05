@@ -40,6 +40,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY --from=deps /app/node_modules ./node_modules
+# prisma generate 的产物在 node_modules/.prisma（deps 阶段没有 schema，生成不了），
+# 必须从 build 阶段拷入，否则运行时抛 "prisma client did not initialize"
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
