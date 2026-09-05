@@ -52,6 +52,24 @@ async function assertCollectionOwned(
   }
 }
 
+/**
+ * sync 端点的 collectionId 归属解析：非法（不存在或属于他人）一律置 null，
+ * 不让整批 sync 400/500——集合归属只是元数据，内容必须照常同步，
+ * 否则一条失效引用会把客户端队列永远堵住。直接 CRUD 路由仍走 assertCollectionOwned 报 400。
+ */
+async function resolveOwnedCollectionId(
+  prisma: PrismaClient,
+  ownerId: number,
+  collectionId: number | null,
+): Promise<number | null> {
+  if (collectionId === null) return null
+  const collection = await prisma.collection.findUnique({
+    where: { id: collectionId },
+    select: { ownerId: true },
+  })
+  return collection && collection.ownerId === ownerId ? collectionId : null
+}
+
 export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient, env: Env): void {
   const snippetPayloadSchema = makeSnippetPayloadSchema(env.MAX_CONTENT_CHARS)
   const snippetPatchSchema = makeSnippetPatchSchema(env.MAX_CONTENT_CHARS)
@@ -133,7 +151,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
         if (sanitized.updatedAt > existing.updatedAt.getTime()) {
           const updated = await prisma.snippet.update({
             where: { id: sanitized.id },
-            data: dataFromPayload(sanitized),
+            data: { ...dataFromPayload(sanitized), syncedAt: new Date() },
           })
           await connectTags(prisma, ownerId, sanitized.tags, updated.id)
           const row = await prisma.snippet.findUniqueOrThrow({
@@ -159,6 +177,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
           collectionId: sanitized.collectionId,
           createdAt: new Date(sanitized.createdAt),
           updatedAt: new Date(sanitized.updatedAt),
+          syncedAt: new Date(),
           deletedAt: null,
         },
       })
@@ -205,6 +224,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
             : {}),
           ...(patch.collectionId !== undefined ? { collectionId: patch.collectionId } : {}),
           updatedAt,
+          syncedAt: new Date(),
         },
       })
       if (patch.tags !== undefined) {
@@ -228,9 +248,12 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
         throw fail(404, 'NOT_FOUND', '条目不存在')
       }
       if (!existing.deletedAt) {
+        const now = new Date()
         await prisma.snippet.update({
           where: { id },
-          data: { deletedAt: new Date() },
+          // 墓碑必须同步推进 updatedAt / syncedAt：增量拉取按这两个游标过滤，
+          // 不推进的话游标较新的设备永远收不到这条删除
+          data: { deletedAt: now, updatedAt: now, syncedAt: now },
         })
       }
       return reply.send(ok({ id, deleted: true }))
@@ -300,9 +323,10 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               pinned: change.pinned,
               usageCount: change.usageCount,
               lastUsedAt: change.lastUsedAt === null ? null : new Date(change.lastUsedAt),
-              collectionId: change.collectionId,
+              collectionId: await resolveOwnedCollectionId(prisma, ownerId, change.collectionId),
               createdAt: new Date(change.createdAt),
               updatedAt: new Date(change.updatedAt),
+              syncedAt: new Date(),
               deletedAt: null,
             },
           })
@@ -323,8 +347,9 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               pinned: change.pinned,
               usageCount: change.usageCount,
               lastUsedAt: change.lastUsedAt === null ? null : new Date(change.lastUsedAt),
-              collectionId: change.collectionId,
+              collectionId: await resolveOwnedCollectionId(prisma, ownerId, change.collectionId),
               updatedAt: new Date(change.updatedAt),
+              syncedAt: new Date(),
             },
           })
           await connectTags(prisma, ownerId, change.tags, change.id)
@@ -338,11 +363,17 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
         if (serverRow) conflicts.push({ id: change.id, server: serializeSnippet(serverRow) })
       }
 
-      // 下行：updatedAt > since 的全部条目（含墓碑，供其它设备执行删除）
+      // 下行基线在本轮写入全部落库后取值：本轮刚应用的条目 syncedAt ≤ 基线，
+      // 不会在下一轮被重复拉回。基线必须早于拉取查询本身（并发写入只可能重复、不能漏）。
+      const servedAt = Date.now()
+
+      // 下行：syncedAt > since 的全部条目（含墓碑，供其它设备执行删除）。
+      // 游标用服务端写入时间而不是客户端 updatedAt：离线修改会带着旧时钟
+      // 时间戳被后补推送，按 updatedAt 过滤会被其它设备的游标永久越过。
       const pulledRows: SnippetWithTags[] = await prisma.snippet.findMany({
-        where: { ownerId, updatedAt: { gt: new Date(body.since) } },
+        where: { ownerId, syncedAt: { gt: new Date(body.since) } },
         include: { tags: true },
-        orderBy: { updatedAt: 'asc' },
+        orderBy: { syncedAt: 'asc' },
       })
 
       return reply.send(
@@ -351,7 +382,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
             applied,
             conflicts,
             pulled: pulledRows.map(serializeSnippet),
-            now,
+            now: servedAt,
           },
           { total: pulledRows.length },
         ),

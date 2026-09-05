@@ -47,6 +47,10 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 
+# 以镜像内置的 node 用户（uid 1000）运行：进程无需 root，
+# k3s 清单里的 runAsNonRoot: true 也依赖这一点
+USER node
+
 EXPOSE 3000
 
 # prisma CLI 不在 .bin（deps 阶段未装它），直接以 node 调用其入口；

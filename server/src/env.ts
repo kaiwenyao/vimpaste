@@ -23,7 +23,7 @@ const EnvSchema = z.object({
     .refine((v) => v.startsWith('postgres://') || v.startsWith('postgresql://'), {
       message: 'DATABASE_URL 必须是 postgres:// 连接串',
     }),
-  /** ≥ 32 字节随机值：参与会话相关哈希的盐化场景，弱值等于没有 */
+  /** ≥ 32 字节随机值：与会话令牌做 HMAC，数据库单独泄露时令牌哈希不可反推 */
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET 至少 32 字符（建议 openssl rand -base64 32）'),
   /** 注册开关：默认关闭，单人自托管用 create-user CLI 建账号 */
   DISABLE_REGISTRATION: booleanString(true),

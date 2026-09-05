@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalSnippetStore } from '../../src/storage/SnippetStore'
-import { LOCAL_SNIPPET_STORAGE, CLOUD_CACHE_STORAGE, CLOUD_CACHE_STORAGE_KEY } from '../../src/storage/snippets'
+import { LOCAL_SNIPPET_STORAGE, cloudCacheStorage } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
+
+const CLOUD_CACHE_STORAGE = cloudCacheStorage(7)
+const CLOUD_CACHE_STORAGE_KEY = CLOUD_CACHE_STORAGE.key
 
 function snippet(overrides: Partial<Snippet> = {}): Snippet {
   const now = Date.now()

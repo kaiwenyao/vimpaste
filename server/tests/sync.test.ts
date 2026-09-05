@@ -48,16 +48,33 @@ describe.skipIf(!dbUp)('POST /api/snippets/sync', () => {
     expect(typeof body.now).toBe('number')
   })
 
-  it('下行按 since 增量：只返回 updatedAt > since 的条目', async () => {
-    const t0 = Date.now() - 10_000
+  it('下行按 since 增量：只返回服务端写入时间晚于基线的条目', async () => {
     await sync(alice.cookie, { since: 0, changes: [snippetPayload()] })
-    await sync(alice.cookie, {
-      since: 0,
-      changes: [snippetPayload({ id: uuid(2), updatedAt: t0 })],
-    })
-    const res = await sync(alice.cookie, { since: Date.now() - 5000, changes: [] })
+    const first = await sync(alice.cookie, { since: 0, changes: [] })
+    const baseline = first.json().data.now
+    // 等过基线所在毫秒，确保第二次写入的 syncedAt 严格大于 baseline
+    await new Promise((r) => setTimeout(r, 5))
+    await sync(alice.cookie, { since: 0, changes: [snippetPayload({ id: uuid(2) })] })
+    const res = await sync(alice.cookie, { since: baseline, changes: [] })
     const ids = res.json().data.pulled.map((s: { id: string }) => s.id)
-    expect(ids).toEqual([uuid(1)]) // uuid(2) 的 updatedAt 是 10 秒前，不增量返回
+    expect(ids).toEqual([uuid(2)]) // uuid(1) 在基线前写入，不增量返回
+  })
+
+  it('离线旧时钟修改后补推送：客户端 updatedAt 早于游标也能被增量拉取', async () => {
+    // 设备 A 同步到 baseline；设备 B 此后推送一条客户端时钟更早（离线期间改的）的修改
+    const first = await sync(alice.cookie, { since: 0, changes: [snippetPayload()] })
+    const baseline = first.json().data.now
+    await new Promise((r) => setTimeout(r, 5))
+    const stale = await sync(alice.cookie, {
+      since: baseline,
+      changes: [
+        snippetPayload({ id: uuid(2), title: '离线旧时钟修改', updatedAt: baseline - 60_000 }),
+      ],
+    })
+    expect(stale.json().data.applied).toEqual([uuid(2)])
+    // A 的下一次增量拉取必须能拿到这条修改（游标按服务端写入时间过滤）
+    const res = await sync(alice.cookie, { since: baseline, changes: [] })
+    expect(res.json().data.pulled.map((s: { id: string }) => s.id)).toContain(uuid(2))
   })
 
   it('上行更新：客户端 updatedAt 更新时覆盖服务端', async () => {
@@ -92,7 +109,23 @@ describe.skipIf(!dbUp)('POST /api/snippets/sync', () => {
     expect(row.title).toBe('服务端版本')
   })
 
-  it('墓碑传播：软删除后其它设备同步可见 deletedAt', async () => {
+  it('墓碑传播：软删除推进游标，游标较新的设备也能收到删除', async () => {
+    await sync(alice.cookie, { since: 0, changes: [snippetPayload()] })
+    // 基线越过条目创建时刻：模拟「另一台设备在最后一次编辑之后才同步过」
+    const base = (await sync(alice.cookie, { since: 0, changes: [] })).json().data.now
+    await new Promise((r) => setTimeout(r, 5))
+    await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/snippets/${uuid(1)}`,
+      headers: { cookie: alice.cookie },
+    })
+    const res = await sync(alice.cookie, { since: base, changes: [] })
+    const pulled = res.json().data.pulled.find((s: { id: string }) => s.id === uuid(1))
+    expect(pulled).toBeDefined()
+    expect(pulled.deletedAt).not.toBeNull()
+  })
+
+  it('墓碑传播（全量）：软删除后同步可见 deletedAt', async () => {
     await sync(alice.cookie, { since: 0, changes: [snippetPayload()] })
     await ctx.app.inject({
       method: 'DELETE',
@@ -102,6 +135,33 @@ describe.skipIf(!dbUp)('POST /api/snippets/sync', () => {
     const res = await sync(alice.cookie, { since: 0, changes: [] })
     const pulled = res.json().data.pulled.find((s: { id: string }) => s.id === uuid(1))
     expect(pulled.deletedAt).not.toBeNull()
+  })
+
+  it('sync 的 collectionId 非法（不存在/他人集合）时置空并照常应用，不 500 不卡批', async () => {
+    // 不存在的集合 id：过去会触发外键 500，客户端无限重试
+    const stale = await sync(alice.cookie, {
+      since: 0,
+      changes: [snippetPayload({ collectionId: 999_999 })],
+    })
+    expect(stale.statusCode).toBe(200)
+    expect(stale.json().data.applied).toEqual([uuid(1)])
+    expect(
+      (await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(1) } })).collectionId,
+    ).toBeNull()
+
+    // 他人集合 id：不得挂载（租户隔离），同样置空
+    const bobCollection = await ctx.prisma.collection.create({
+      data: { name: 'B 的集合', ownerId: bob.id },
+    })
+    const foreign = await sync(alice.cookie, {
+      since: 0,
+      changes: [snippetPayload({ id: uuid(2), collectionId: bobCollection.id })],
+    })
+    expect(foreign.statusCode).toBe(200)
+    expect(foreign.json().data.applied).toEqual([uuid(2)])
+    expect(
+      (await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(2) } })).collectionId,
+    ).toBeNull()
   })
 
   it('多用户隔离：B 的同步拉不到 A 的条目，撞 A 的 UUID 只收到空服务端版本', async () => {

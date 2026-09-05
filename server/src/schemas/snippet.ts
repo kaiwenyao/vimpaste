@@ -90,8 +90,6 @@ export const snippetQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   collectionId: z.coerce.number().int().positive().optional(),
   tag: z.string().trim().max(64).optional(),
-  /** 只返回 updatedAt > since 的条目（含墓碑） */
-  since: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   /** keyset 游标：base64url("<updatedAt>:<id>") */
   cursor: z.string().max(256).optional(),

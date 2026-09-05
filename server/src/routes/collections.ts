@@ -61,7 +61,15 @@ export function registerCollectionRoutes(app: FastifyInstance, prisma: PrismaCli
     if (!existing || existing.ownerId !== ownerId) {
       throw fail(404, 'NOT_FOUND', '集合不存在')
     }
-    await prisma.collection.delete({ where: { id } })
+    // 显式置空并推进 syncedAt：其它设备按游标拉取后才能得知条目已脱离该集合
+    //（只靠外键 SetNull 不会触发任何游标变化，缓存会一直留着失效的 collectionId）
+    await prisma.$transaction([
+      prisma.snippet.updateMany({
+        where: { collectionId: id, ownerId },
+        data: { collectionId: null, syncedAt: new Date() },
+      }),
+      prisma.collection.delete({ where: { id } }),
+    ])
     return reply.send(ok({ id, deleted: true }))
   })
 }

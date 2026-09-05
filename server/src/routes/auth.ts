@@ -53,7 +53,12 @@ export function registerAuthRoutes(
           passwordHash: await hashPassword(body.password),
         },
       })
-      const { token } = await createSession(prisma, user.id, request.headers['user-agent'])
+      const { token } = await createSession(
+        prisma,
+        user.id,
+        request.headers['user-agent'],
+        env.SESSION_SECRET,
+      )
       setSessionCookie(reply, token)
       return reply.code(201).send(ok({ user: toAuthedUser(user) }))
     },
@@ -87,14 +92,19 @@ export function registerAuthRoutes(
         throw fail(401, 'AUTH_FAILED', '邮箱或密码错误')
       }
       clearFailures(email)
-      const { token } = await createSession(prisma, user.id, request.headers['user-agent'])
+      const { token } = await createSession(
+        prisma,
+        user.id,
+        request.headers['user-agent'],
+        env.SESSION_SECRET,
+      )
       setSessionCookie(reply, token)
       return { ok: true as const, data: { user: toAuthedUser(user) } }
     },
   )
 
   app.post('/logout', async (request: FastifyRequest, reply: FastifyReply) => {
-    const resolved = await resolveSession(prisma, request)
+    const resolved = await resolveSession(prisma, request, env.SESSION_SECRET)
     if (resolved) {
       await prisma.session.delete({ where: { id: resolved.session.id } }).catch(() => undefined)
     }
@@ -103,7 +113,7 @@ export function registerAuthRoutes(
   })
 
   app.get('/me', async (request: FastifyRequest, reply: FastifyReply) => {
-    const resolved = await resolveSession(prisma, request)
+    const resolved = await resolveSession(prisma, request, env.SESSION_SECRET)
     if (!resolved) {
       void reply.code(401)
       throw fail(401, 'UNAUTHORIZED', '未登录')

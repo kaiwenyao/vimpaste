@@ -1,11 +1,12 @@
 /**
  * 服务端会话（plan-v2-accounts.md Phase 2）：
- * - Cookie 里是 32 字节随机 token（base64url）；库里只存它的 SHA-256，可单条吊销；
+ * - Cookie 里是 32 字节随机 token（base64url）；库里只存它与 SESSION_SECRET 的
+ *   HMAC-SHA256，可单条吊销；
  * - 30 天滑动过期：剩余不足一半（15 天）时在已认证请求中续期并重发 Cookie；
  * - Cookie 属性 httpOnly + Secure + SameSite=Strict + Path=/，
  *   配合同源部署（浏览器只访问 /api/）与 Origin 校验构成 CSRF 双保险。
  */
-import { createHash, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { PrismaClient, Session, User } from '@prisma/client'
 
@@ -24,8 +25,13 @@ export function generateSessionToken(): string {
   return randomBytes(32).toString('base64url')
 }
 
-export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
+/**
+ * 库里存的是 token 的 HMAC-SHA256（密钥为 SESSION_SECRET）：数据库单独泄露
+ * 拿不到可用凭据，也不能反查出 token；且让 SESSION_SECRET 真正参与会话安全，
+ * 而不是一个「看起来有用」的死配置。
+ */
+export function hashToken(token: string, secret: string): string {
+  return createHmac('sha256', secret).update(token).digest('hex')
 }
 
 export interface CreateSessionResult {
@@ -37,12 +43,13 @@ export async function createSession(
   prisma: PrismaClient,
   userId: number,
   userAgent: string | undefined,
+  secret: string,
   now = Date.now(),
 ): Promise<CreateSessionResult> {
   const token = generateSessionToken()
   const session = await prisma.session.create({
     data: {
-      id: hashToken(token),
+      id: hashToken(token, secret),
       userId,
       expiresAt: new Date(now + SESSION_TTL_MS),
       userAgent: userAgent?.slice(0, 256) ?? null,
@@ -79,12 +86,13 @@ export interface ResolvedSession {
 export async function resolveSession(
   prisma: PrismaClient,
   request: FastifyRequest,
+  secret: string,
   now = Date.now(),
 ): Promise<ResolvedSession | null> {
   const token = request.cookies[SESSION_COOKIE]
   if (!token) return null
   const session = await prisma.session.findUnique({
-    where: { id: hashToken(token) },
+    where: { id: hashToken(token, secret) },
     include: { user: true },
   })
   if (!session) return null

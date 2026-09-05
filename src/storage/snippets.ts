@@ -4,7 +4,7 @@
  * 键策略（v2 兼容设计，与既有测试「一行不改地全绿」硬门槛对齐）：
  * - 匿名（未登录）路径沿用既有键 `vimpaste.history.v1`、上限 30 条——
  *   行为与 v1 完全一致，条目上允许携带新增的可选字段（kind/pinned/…）；
- * - 登录后的本地缓存用新键 `vimpaste.snippets.v2`、上限 500 条，
+ * - 登录后的本地缓存用新键 `vimpaste.snippets.v2.<userId>`（按用户隔离）、上限 500 条，
  *   并在登录时把 v1 既有条目迁移进来（v1 键保留一个版本的回滚窗口，不删）。
  * - `src/storage/history.ts`（v1 模块）原样保留：它描述旧形状且被旧测试覆盖，
  *   下一个版本随 v1 键一起清理。
@@ -43,7 +43,9 @@ export const MAX_CACHED_SNIPPETS = 500
 export const SNIPPET_MAX_CHARS = 100_000
 
 export const LOCAL_STORAGE_KEY = 'vimpaste.history.v1'
-export const CLOUD_CACHE_STORAGE_KEY = 'vimpaste.snippets.v2'
+/** 登录用户的本地缓存键前缀：按用户隔离——同一浏览器先后登录不同账号时，
+ * 缓存、同步队列互不可见，A 的待推内容绝不会被推进 B 的账号 */
+export const CLOUD_CACHE_STORAGE_PREFIX = 'vimpaste.snippets.v2'
 
 /** 白名单式清洗：未知字段一律丢弃，绝不透传（与 v1 sanitizeEntry 同一哲学） */
 export function sanitizeSnippet(raw: unknown): Snippet | null {
@@ -77,11 +79,17 @@ function toTimeOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
+/** 标签上限：与服务端 schema（≤ 20 个、单个 ≤ 64 字符）对齐 */
+export const MAX_TAGS_PER_SNIPPET = 20
+export const MAX_TAG_CHARS = 64
+
 function sanitizeTags(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(
-    value.filter((t): t is string => typeof t === 'string' && t.trim() !== '').map((t) => t.trim()),
-  )].slice(0, 20)
+    value
+      .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+      .map((t) => t.trim().slice(0, MAX_TAG_CHARS)),
+  )].slice(0, MAX_TAGS_PER_SNIPPET)
 }
 
 /** 存储后端描述：匿名与云端缓存只是键与上限不同 */
@@ -95,9 +103,12 @@ export const LOCAL_SNIPPET_STORAGE: SnippetStorageConfig = {
   maxEntries: MAX_LOCAL_SNIPPETS,
 }
 
-export const CLOUD_CACHE_STORAGE: SnippetStorageConfig = {
-  key: CLOUD_CACHE_STORAGE_KEY,
-  maxEntries: MAX_CACHED_SNIPPETS,
+/** 登录用户的本地缓存存储：键按 user.id 隔离 */
+export function cloudCacheStorage(userId: number): SnippetStorageConfig {
+  return {
+    key: `${CLOUD_CACHE_STORAGE_PREFIX}.${userId}`,
+    maxEntries: MAX_CACHED_SNIPPETS,
+  }
 }
 
 function sortSnippets(list: Snippet[]): Snippet[] {
@@ -145,13 +156,14 @@ export function upsertSnippet(entries: Snippet[], snippet: Snippet): Snippet[] {
 
 /**
  * 登录时的 v1 → v2 迁移（plan-v2-accounts.md §5.3）：
- * v1 键存在且 v2 键不存在时，读 v1 → 补默认字段 → 写 v2；v1 键保留不删（回滚窗口）。
- * 返回迁移后的条目列表（仅本地字段，kind 一律 'command'）。
+ * 该用户专属的 v2 键不存在且 v1 键存在时，读 v1 → 补默认字段 → 写 v2；
+ * v1 键保留不删（回滚窗口）。返回迁移后的条目列表（仅本地字段，kind 一律 'command'）。
  */
-export function migrateV1ToV2(): Snippet[] {
-  const hasV2 = localStorage.getItem(CLOUD_CACHE_STORAGE_KEY) !== null
+export function migrateV1ToV2(userId: number): Snippet[] {
+  const storage = cloudCacheStorage(userId)
+  const hasV2 = localStorage.getItem(storage.key) !== null
   const v1Raw = localStorage.getItem(LOCAL_STORAGE_KEY)
-  if (hasV2 || !v1Raw) return loadSnippetsFrom(CLOUD_CACHE_STORAGE)
+  if (hasV2 || !v1Raw) return loadSnippetsFrom(storage)
   let migrated: Snippet[] = []
   try {
     const parsed: unknown = JSON.parse(v1Raw)
@@ -165,8 +177,8 @@ export function migrateV1ToV2(): Snippet[] {
   } catch {
     migrated = []
   }
-  saveSnippetsTo(CLOUD_CACHE_STORAGE, migrated)
-  return loadSnippetsFrom(CLOUD_CACHE_STORAGE)
+  saveSnippetsTo(storage, migrated)
+  return loadSnippetsFrom(storage)
 }
 
 export { deriveTitle, createHistoryId }

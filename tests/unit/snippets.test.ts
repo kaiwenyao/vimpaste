@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  CLOUD_CACHE_STORAGE_KEY,
+  CLOUD_CACHE_STORAGE_PREFIX,
   LOCAL_STORAGE_KEY,
   MAX_CACHED_SNIPPETS,
   MAX_LOCAL_SNIPPETS,
   loadSnippetsFrom,
   LOCAL_SNIPPET_STORAGE,
-  CLOUD_CACHE_STORAGE,
+  cloudCacheStorage,
   migrateV1ToV2,
   sanitizeSnippet,
   saveSnippetsTo,
   upsertSnippet,
 } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
+
+const TEST_USER_ID = 42
+const CLOUD_CACHE_STORAGE = cloudCacheStorage(TEST_USER_ID)
+const CLOUD_CACHE_STORAGE_KEY = CLOUD_CACHE_STORAGE.key
 
 function snippet(overrides: Partial<Snippet> = {}): Snippet {
   const now = Date.now()
@@ -102,36 +106,38 @@ describe('本地存储（匿名路径沿用 vimpaste.history.v1）', () => {
   })
 })
 
-describe('migrateV1ToV2（登录迁移，v1 键保留回滚窗口）', () => {
-  it('v1 存在且 v2 不存在：读 v1 → 补字段 → 写 v2；v1 键原样保留', () => {
+describe('migrateV1ToV2（登录迁移，按用户分键，v1 键保留回滚窗口）', () => {
+  it('v1 存在且该用户的 v2 不存在：读 v1 → 补字段 → 写 v2；v1 键原样保留', () => {
     const v1 = [
       { id: 'old-1', title: '旧命令', content: 'echo old', langId: 'shell', createdAt: 1, updatedAt: 2 },
     ]
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(v1))
 
-    const migrated = migrateV1ToV2()
+    const migrated = migrateV1ToV2(TEST_USER_ID)
     expect(migrated).toHaveLength(1)
     expect(migrated[0]).toMatchObject({ id: 'old-1', kind: 'command', syncState: 'local' })
     // v1 键保留（一个版本的回滚窗口）
     expect(JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]')[0].id).toBe('old-1')
     expect(localStorage.getItem(CLOUD_CACHE_STORAGE_KEY)).toContain('old-1')
+    // 键按用户隔离：别的用户的 v2 键不受影响
+    expect(cloudCacheStorage(TEST_USER_ID + 1).key).toBe(`${CLOUD_CACHE_STORAGE_PREFIX}.${TEST_USER_ID + 1}`)
   })
 
   it('v2 已存在时不覆盖（幂等）；v1 缺失时直接读 v2', () => {
     localStorage.setItem(CLOUD_CACHE_STORAGE_KEY, JSON.stringify([snippet({ id: 'cloud-1' })]))
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([{ id: 'old-1', content: 'echo old' }]))
-    const result = migrateV1ToV2()
+    const result = migrateV1ToV2(TEST_USER_ID)
     expect(result.map((s) => s.id)).toEqual(['cloud-1'])
   })
 
   it('v1 损坏时静默降级为空列表且写出空 v2', () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, '{not json')
-    expect(migrateV1ToV2()).toEqual([])
+    expect(migrateV1ToV2(TEST_USER_ID)).toEqual([])
     expect(loadSnippetsFrom(CLOUD_CACHE_STORAGE)).toEqual([])
   })
 })
 
-describe('云端缓存（vimpaste.snippets.v2，500 条）', () => {
+describe('云端缓存（vimpaste.snippets.v2.<userId>，500 条）', () => {
   it('上限 500 条，条目可携带 kind/pinned/localOnly 等扩展字段', () => {
     const list = Array.from({ length: 501 }, (_, i) =>
       snippet({ id: `s${i}`, updatedAt: i, kind: 'prompt', pinned: i % 2 === 0 }),

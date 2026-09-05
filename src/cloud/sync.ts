@@ -14,11 +14,17 @@
 import { createHistoryId } from '../storage/history'
 import type { Snippet } from '../storage/snippets'
 import type { LocalSnippetStore } from '../storage/SnippetStore'
-import { cloudApi } from './api'
+import { cloudApi, CloudApiError } from './api'
 import type { ApiSnippet, SyncResult } from './api'
 import { isLangId } from '../detection/language'
 
-const QUEUE_KEY = 'vimpaste.syncqueue.v1'
+/** 队列键按 user.id 隔离：换账号登录时 A 的待推内容绝不会被推进 B 的账号 */
+export const QUEUE_KEY_PREFIX = 'vimpaste.syncqueue.v1'
+
+export function queueKeyFor(userId: number): string {
+  return `${QUEUE_KEY_PREFIX}.${userId}`
+}
+
 export const PUSH_DEBOUNCE_MS = 2000
 const POLL_INTERVAL_MS = 5 * 60 * 1000
 const MAX_BACKOFF_MS = 5 * 60 * 1000
@@ -41,9 +47,9 @@ export interface SyncStatus {
   lastSyncAt: number | null
 }
 
-export function loadQueue(): SyncQueue {
+export function loadQueue(key: string): SyncQueue {
   try {
-    const raw = localStorage.getItem(QUEUE_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return { upserts: [], deletes: [], lastSyncAt: null }
     const parsed = JSON.parse(raw) as Partial<SyncQueue>
     return {
@@ -56,9 +62,9 @@ export function loadQueue(): SyncQueue {
   }
 }
 
-export function saveQueue(queue: SyncQueue): void {
+export function saveQueue(key: string, queue: SyncQueue): void {
   try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+    localStorage.setItem(key, JSON.stringify(queue))
   } catch {
     /* 队列持久化失败不致命：最多多推一轮 */
   }
@@ -105,10 +111,12 @@ export function localToApi(s: Snippet): ApiSnippet {
 export interface SyncEngineOptions {
   store: LocalSnippetStore
   onStatus: (status: SyncStatus) => void
+  /** 本引擎的持久化队列键（按登录用户隔离，见 queueKeyFor） */
+  queueKey: string
 }
 
 export class SyncEngine {
-  private queue: SyncQueue = loadQueue()
+  private queue: SyncQueue
   private backoffMs = 1000
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -119,7 +127,9 @@ export class SyncEngine {
   /** 引擎自身写入 store（拉取合并 / 冲突副本）时挂起 onUpsert 钩子，防止回环入队 */
   private applyingRemote = false
 
-  constructor(private readonly opts: SyncEngineOptions) {}
+  constructor(private readonly opts: SyncEngineOptions) {
+    this.queue = loadQueue(opts.queueKey)
+  }
 
   /** 引擎写 store 期间为 true；store 的 onUpsert 钩子据此避免把拉取结果再入队 */
   get remoteWrite(): boolean {
@@ -173,12 +183,18 @@ export class SyncEngine {
 
   /** 本地写入 → 入队 + 防抖推送（§7.2） */
   enqueueUpsert(snippet: Snippet): void {
-    if (snippet.localOnly) return // 仅本地条目永不入队、永不出现在任何请求体里
+    if (snippet.localOnly) {
+      // 仅本地：连同此前已在待推队列里的旧版本一起出队（防抖窗口内被切换的场景），
+      // 否则旧 payload 会在下一轮被推上服务器，仅本地的承诺失效
+      this.queue.upserts = this.queue.upserts.filter((s) => s.id !== snippet.id)
+      saveQueue(this.opts.queueKey, this.queue)
+      return
+    }
     this.queue.upserts = [
       ...this.queue.upserts.filter((s) => s.id !== snippet.id),
       { ...snippet, syncState: 'pending' },
     ]
-    saveQueue(this.queue)
+    saveQueue(this.opts.queueKey, this.queue)
     this.schedulePush()
   }
 
@@ -186,7 +202,7 @@ export class SyncEngine {
   enqueueDelete(id: string): void {
     this.queue.upserts = this.queue.upserts.filter((s) => s.id !== id)
     if (!this.queue.deletes.includes(id)) this.queue.deletes.push(id)
-    saveQueue(this.queue)
+    saveQueue(this.opts.queueKey, this.queue)
     this.schedulePush()
   }
 
@@ -199,7 +215,7 @@ export class SyncEngine {
         { ...s, syncState: 'pending' },
       ]
     }
-    saveQueue(this.queue)
+    saveQueue(this.opts.queueKey, this.queue)
     this.schedulePush()
   }
 
@@ -233,7 +249,7 @@ export class SyncEngine {
       if (this.queue.lastSyncAt === null || pullResult.now > this.queue.lastSyncAt) {
         this.queue.lastSyncAt = pullResult.now
       }
-      saveQueue(this.queue)
+      saveQueue(this.opts.queueKey, this.queue)
       this.mergePulled(pullResult.pulled, new Set(), deletedNow)
       while (this.queue.upserts.length > 0) {
         const before = this.queue.upserts.length
@@ -271,7 +287,7 @@ export class SyncEngine {
     try {
       const result = await cloudApi.sync(0, [])
       this.queue.lastSyncAt = result.now
-      saveQueue(this.queue)
+      saveQueue(this.opts.queueKey, this.queue)
       this.mergePulled(result.pulled, new Set())
       this.resetBackoff()
       this.setStatus('ok', result.now)
@@ -291,10 +307,16 @@ export class SyncEngine {
     const deleted: string[] = []
     while (this.queue.deletes.length > 0) {
       const id = this.queue.deletes[0]
-      await cloudApi.deleteSnippet(id)
+      try {
+        await cloudApi.deleteSnippet(id)
+      } catch (error) {
+        // 404 = 服务端从未见过该条目（离线新建后、尚未推送就被删除）：视同已删除。
+        // 若当作失败重试，这条 404 会永远堵在队列头，整个同步停摆。
+        if (!(error instanceof CloudApiError && error.status === 404)) throw error
+      }
       this.queue.deletes = this.queue.deletes.slice(1)
       deleted.push(id)
-      saveQueue(this.queue)
+      saveQueue(this.opts.queueKey, this.queue)
     }
     return deleted
   }
@@ -317,14 +339,20 @@ export class SyncEngine {
     }
     // 已应用的条目从队列移除，缓存标记 synced
     const applied = new Set(result.applied)
-    this.queue.upserts = this.queue.upserts.filter((s) => !applied.has(s.id))
     const applyingRemote = this.applyingRemote
     this.applyingRemote = true
     try {
       for (const id of applied) {
-        const local = batch.find((b) => b.id === id)
-        if (local) {
-          this.opts.store.upsert({ ...serverToLocal(local), updatedAt: local.updatedAt })
+        const pushed = batch.find((b) => b.id === id)
+        if (!pushed) continue
+        // 请求在途期间用户又编辑了该条目（队列里已是更新的版本）：
+        // 保留新版本等下一轮推送，绝不拿这轮推送的旧内容覆盖它
+        const queued = this.queue.upserts.find((s) => s.id === id)
+        if (queued && queued.updatedAt > pushed.updatedAt) continue
+        this.queue.upserts = this.queue.upserts.filter((s) => s.id !== id)
+        const current = this.opts.store.current().find((s) => s.id === id)
+        if (!current || current.updatedAt <= pushed.updatedAt) {
+          this.opts.store.upsert(serverToLocal(pushed))
         }
       }
       // 冲突：本地另存副本重新入队，采用服务端版本
@@ -334,7 +362,10 @@ export class SyncEngine {
         const local = this.queue.upserts.find((s) => s.id === conflict.id)
         this.queue.upserts = this.queue.upserts.filter((s) => s.id !== conflict.id)
         if (conflict.server) {
-          this.opts.store.upsert(serverToLocal(conflict.server))
+          const current = this.opts.store.current().find((s) => s.id === conflict.id)
+          if (!current || current.updatedAt <= conflict.server.updatedAt) {
+            this.opts.store.upsert(serverToLocal(conflict.server))
+          }
         }
         if (local) this.saveConflictCopy(local)
       }
@@ -342,7 +373,7 @@ export class SyncEngine {
     } finally {
       this.applyingRemote = applyingRemote
     }
-    saveQueue(this.queue)
+    saveQueue(this.opts.queueKey, this.queue)
   }
 
   private mergePulled(pulled: ApiSnippet[], pendingIds: Set<string>, deletedNow: string[] = []): void {
@@ -354,6 +385,7 @@ export class SyncEngine {
         if (this.queue.deletes.includes(p.id) || deletedNow.includes(p.id)) continue
         if (p.deletedAt !== null) {
           const local = this.opts.store.current().find((s) => s.id === p.id)
+          if (local?.localOnly) continue // 仅本地条目：用户已选择留在本机，服务端墓碑不影响它
           if (local && local.updatedAt > p.updatedAt) {
             // 本地有比服务端删除更晚的修改：另存冲突副本，绝不丢字
             this.saveConflictCopy(local)
@@ -376,7 +408,7 @@ export class SyncEngine {
     }
   }
 
-  /** 冲突副本：新 id、标题加后缀、时间取当前（§7.1） */
+  /** 冲突副本：新 id、标题加后缀、时间取当前（§7.1）。仅本地的版本保持仅本地、不入队 */
   private saveConflictCopy(local: Snippet): void {
     const copy: Snippet = {
       ...local,
@@ -384,9 +416,11 @@ export class SyncEngine {
       title: `${local.title}（冲突副本）`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      syncState: 'pending',
+      syncState: local.localOnly ? 'local' : 'pending',
     }
     this.opts.store.upsert(copy)
-    this.queue.upserts = [...this.queue.upserts, { ...copy }]
+    if (!local.localOnly) {
+      this.queue.upserts = [...this.queue.upserts, { ...copy }]
+    }
   }
 }

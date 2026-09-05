@@ -32,7 +32,11 @@ function isSafeMethod(method: string): boolean {
   return method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
 }
 
-export function registerSecurityHooks(app: FastifyInstance, prisma: PrismaClient): void {
+export function registerSecurityHooks(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  sessionSecret: string,
+): void {
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.url.startsWith('/api/') || isSafeMethod(request.method)) return
     const origin = request.headers.origin
@@ -52,7 +56,7 @@ export function registerSecurityHooks(app: FastifyInstance, prisma: PrismaClient
   })
 
   app.decorate('requireAuth', async (request: FastifyRequest, reply: FastifyReply) => {
-    const resolved = await resolveSession(prisma, request)
+    const resolved = await resolveSession(prisma, request, sessionSecret)
     if (!resolved) {
       void reply.code(401).send(fail(401, 'UNAUTHORIZED', '请先登录'))
       return

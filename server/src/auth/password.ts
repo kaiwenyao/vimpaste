@@ -20,10 +20,14 @@ export function hashPassword(password: string): Promise<string> {
   return hash(password, ARGON2_PARAMS)
 }
 
-/** 验证失败（哈希格式损坏等）一律返回 false，不向调用方抛错 */
+/**
+ * 验证失败（哈希格式损坏等）一律返回 false，不向调用方抛错。
+ * 注意不传 options：verify 必须使用 hash 串内嵌的参数——传固定参数会在
+ * 将来调高 ARGON2_PARAMS 时让旧哈希验证失败。
+ */
 export async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
   try {
-    return await verify(passwordHash, password, ARGON2_PARAMS)
+    return await verify(passwordHash, password)
   } catch {
     return false
   }

@@ -7,7 +7,7 @@
 import { LocalSnippetStore } from '../storage/SnippetStore'
 import type { Snippet } from '../storage/snippets'
 import {
-  CLOUD_CACHE_STORAGE,
+  cloudCacheStorage,
   migrateV1ToV2,
   MAX_LOCAL_SNIPPETS,
   loadSnippetsFrom,
@@ -15,26 +15,27 @@ import {
 } from '../storage/snippets'
 import { cloudApi, CloudApiError } from './api'
 import type { CloudUser } from './api'
-import { SyncEngine } from './sync'
+import { SyncEngine, queueKeyFor } from './sync'
 import type { SyncStatus } from './sync'
 
 export interface CloudSessionOptions {
   onStatus: (status: SyncStatus) => void
 }
 
-const MERGE_ASKED_KEY = 'vimpaste.mergeasked.v1'
+/** 合并向导「问过一次」标记：按 user.id 隔离，换账号登录要重新问 */
+const MERGE_ASKED_PREFIX = 'vimpaste.mergeasked.v1'
 
-function mergeAlreadyAsked(): boolean {
+function mergeAlreadyAsked(userId: number): boolean {
   try {
-    return localStorage.getItem(MERGE_ASKED_KEY) === '1'
+    return localStorage.getItem(`${MERGE_ASKED_PREFIX}.${userId}`) === '1'
   } catch {
     return false
   }
 }
 
-function markMergeAsked(): void {
+function markMergeAsked(userId: number): void {
   try {
-    localStorage.setItem(MERGE_ASKED_KEY, '1')
+    localStorage.setItem(`${MERGE_ASKED_PREFIX}.${userId}`, '1')
   } catch {
     /* 忽略 */
   }
@@ -51,20 +52,20 @@ export class CloudSession {
     this.store = store
     this.engine = engine
     this.user = user
-    this.localUnsynced = mergeAlreadyAsked()
+    this.localUnsynced = mergeAlreadyAsked(user.id)
       ? []
       : store.current().filter((s) => s.syncState === 'local' && !s.localOnly)
   }
 
   /** 合并向导「合并到云端」：全部本机条目入队推送 */
   mergeLocal(): void {
-    markMergeAsked()
+    markMergeAsked(this.user.id)
     this.engine.enqueueMany(this.localUnsynced)
   }
 
   /** 合并向导「暂不合并」：条目留在本地缓存，不入队 */
   keepLocal(): void {
-    markMergeAsked()
+    markMergeAsked(this.user.id)
     /* syncState 保持 local，仅后续编辑会单独入队 */
   }
 
@@ -78,14 +79,14 @@ export class CloudSession {
   }
 }
 
-/** 登录成功：迁移 v1 → v2 缓存，装配 store/engine，全量拉取 */
+/** 登录成功：迁移 v1 → v2 缓存（按用户分键），装配 store/engine，全量拉取 */
 export async function startCloudSession(
   user: CloudUser,
   options: CloudSessionOptions,
 ): Promise<CloudSession> {
-  // 迁移：v1 存在且 v2 不存在时读 v1 → 补默认字段 → 写 v2（v1 键保留）
-  migrateV1ToV2()
-  const store = new LocalSnippetStore(CLOUD_CACHE_STORAGE, {
+  // 迁移：该用户的 v2 键不存在且 v1 存在时读 v1 → 补默认字段 → 写 v2（v1 键保留）
+  migrateV1ToV2(user.id)
+  const store = new LocalSnippetStore(cloudCacheStorage(user.id), {
     onUpsert: (snippet) => {
       if (!engine.remoteWrite) engine.enqueueUpsert(snippet)
     },
@@ -93,7 +94,7 @@ export async function startCloudSession(
       if (!engine.remoteWrite) engine.enqueueDelete(id)
     },
   })
-  const engine = new SyncEngine({ store, onStatus: options.onStatus })
+  const engine = new SyncEngine({ store, onStatus: options.onStatus, queueKey: queueKeyFor(user.id) })
   engine.start()
   await engine.pullAll()
   return new CloudSession(store, engine, user)

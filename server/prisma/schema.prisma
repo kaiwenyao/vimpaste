@@ -2,7 +2,8 @@
 //
 // 设计要点：
 // - 单用户为主，但数据按多用户建模（所有业务表挂 ownerId），将来开放注册不用改表。
-// - Session 表只存 token 的 SHA-256：库里泄露也拿不到可用凭据，且可单条吊销。
+// - Session 表只存 token 与 SESSION_SECRET 的 HMAC-SHA256：数据库单独泄露也
+//   拿不到可用凭据，且可单条吊销。
 // - Snippet 的 id 由客户端生成 UUID：离线新建的条目在同步前就有稳定 id，无需重映射。
 // - createdAt/updatedAt 由客户端提供（表达「三天前离线改的」），服务端只做合理性钳制；
 //   因此这里不用 @default(now()) / @updatedAt。
@@ -31,9 +32,9 @@ model User {
   tags        Tag[]
 }
 
-/// 服务端会话表：Cookie 里是随机 token，库里只存它的 SHA-256，可单条吊销
+/// 服务端会话表：Cookie 里是随机 token，库里只存它与 SESSION_SECRET 的 HMAC-SHA256，可单条吊销
 model Session {
-  id        String   @id // sha256(token)
+  id        String   @id // hmac_sha256(token, SESSION_SECRET)
   userId    Int
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
@@ -85,10 +86,15 @@ model Snippet {
 
   createdAt DateTime
   updatedAt DateTime
+  /// 服务端写入时间戳（每次 create/update/删除置墓碑时由服务端赋值）。
+  /// updatedAt 由客户端时钟提供，不能做增量拉取游标——离线修改会带着更早的
+  /// 时间戳被后补推送，按 updatedAt 过滤会永久漏单；syncedAt 单调前进才可信。
+  syncedAt  DateTime  @default(now())
   /// 软删除墓碑：同步端据此在其它设备上执行删除，30 天后由定时任务硬删
   deletedAt DateTime?
 
   @@index([ownerId, updatedAt])
+  @@index([ownerId, syncedAt])
   @@index([ownerId, kind, updatedAt])
 }
 

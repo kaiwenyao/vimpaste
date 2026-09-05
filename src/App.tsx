@@ -20,7 +20,7 @@ import type { CloudSession } from './cloud/session'
 import type { SyncStatus } from './cloud/sync'
 import type { ApiCollection } from './cloud/api'
 import type { Snippet, SnippetKind } from './storage/snippets'
-import { LOCAL_SNIPPET_STORAGE } from './storage/snippets'
+import { LOCAL_SNIPPET_STORAGE, MAX_TAGS_PER_SNIPPET, MAX_TAG_CHARS } from './storage/snippets'
 import { LocalSnippetStore } from './storage/SnippetStore'
 import type { SnippetStore } from './storage/SnippetStore'
 import { loadPrefs, savePrefs } from './storage/prefs'
@@ -514,9 +514,19 @@ export default function App() {
   const handleTagsChange = useCallback((id: string, tags: string[]) => {
     const entry = historyRef.current.find((e) => e.id === id)
     if (!entry) return
+    // 与服务端 schema（tags ≤ 20 个、单个 ≤ 64 字符）对齐：超限的标签若原样入队，
+    // sync 会整批 400 且无限重试，堵死后续所有同步
+    const sanitized = [
+      ...new Set(
+        tags
+          .map((t) => t.trim())
+          .filter((t) => t !== '')
+          .map((t) => (t.length > MAX_TAG_CHARS ? t.slice(0, MAX_TAG_CHARS) : t)),
+      ),
+    ].slice(0, MAX_TAGS_PER_SNIPPET)
     storeRef.current.upsert({
       ...entry,
-      tags,
+      tags: sanitized,
       syncState: sessionRef.current ? 'pending' : 'local',
       updatedAt: Date.now(),
     })

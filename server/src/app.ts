@@ -59,7 +59,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(cookie)
   await app.register(rateLimit, { global: false })
 
-  registerSecurityHooks(app, prisma)
+  registerSecurityHooks(app, prisma, env.SESSION_SECRET)
 
   // 统一错误信封：zod 校验失败 → 400（只回字段路径，不回显输入）；
   // ApiError → 携带状态码与业务码；其余 → 500（原始错误只进日志）。

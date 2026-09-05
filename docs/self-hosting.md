@@ -21,6 +21,12 @@ docker compose up -d          # 一把起 postgres:17 + web(nginx) + api(fastify
 - API 健康检查：`curl http://localhost:3000/api/healthz`
 - 本地 compose 默认开放注册（`DISABLE_REGISTRATION=false`），直接在页面右上角「登录 → 注册」创建账号。
 
+> **登录需要 HTTPS（localhost 除外）**：会话 Cookie 带 `Secure` 属性，浏览器只在
+> HTTPS 站点（或被视为安全的 `localhost`）保存它。用 `http://<局域网IP>:8080`
+> 从其它设备访问时点「登录」会没有任何反应——这是浏览器的安全行为，不是故障。
+> 局域网使用请上 TLS（如 nginx/caddy 反代 + 自签或内网证书），或经由 Tailscale
+> 等 HTTPS 的组网访问。
+
 ## 快速起步（本地开发）
 
 ```bash
