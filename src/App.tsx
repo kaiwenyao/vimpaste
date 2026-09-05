@@ -229,6 +229,12 @@ export default function App() {
     void editorRef.current?.setKind(editorKind)
   }, [editorKind])
 
+  // 语法高亮跟随语言：识别或手动选择变化时把对应语言包装进编辑器
+  // （prompt 形态由 setKind 固定轻高亮；须声明在 setKind 之后，语言包晚于类型重配置落地）
+  useEffect(() => {
+    void editorRef.current?.setLanguage(langId)
+  }, [langId])
+
   // 应用编辑器键位模式到编辑器实例（编辑器内部对未变化的 mode 提前返回）
   useEffect(() => {
     editorRef.current?.setEditorMode(editorMode)
