@@ -1,0 +1,58 @@
+# VimPaste API（Fastify）。镜像由 Jenkins 构建并推送 ghcr，GitOps 阶段更新此行。
+# 启动命令先执行 prisma migrate deploy（幂等，多副本由 Postgres 迁移锁保证）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vimpaste-api
+  labels:
+    app: vimpaste-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vimpaste-api
+  template:
+    metadata:
+      labels:
+        app: vimpaste-api
+    spec:
+      containers:
+        - name: api
+          # GitOps：Jenkins 按 commit 短 SHA 更新此行
+          image: ghcr.io/kaiwenyao/vimpaste-api:latest
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vimpaste-api-secrets
+                  key: DATABASE_URL
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vimpaste-api-secrets
+                  key: SESSION_SECRET
+            - name: DISABLE_REGISTRATION
+              value: 'true'
+          readinessProbe:
+            httpGet:
+              path: /api/readyz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true

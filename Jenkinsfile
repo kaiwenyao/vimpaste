@@ -50,7 +50,27 @@ spec:
       workingDir: /home/jenkins/agent
 
     # -------------------------------------------------------
-    # 容器二：docker —— 构建并推送镜像
+    # 容器二：postgres —— v2 API 集成测试的数据库（server/ 测试需要）
+    # -------------------------------------------------------
+    # 与生产/本地 compose 保持一致用 postgres:17-alpine，避免迁移在两侧行为不同。
+    # Pod 每次构建临时创建，数据不持久化。
+    - name: postgres
+      image: postgres:17-alpine
+      env:
+        - name: POSTGRES_USER
+          value: vimpaste
+        - name: POSTGRES_PASSWORD
+          value: vimpaste
+        - name: POSTGRES_DB
+          value: vimpaste
+      readinessProbe:
+        exec:
+          command: ['pg_isready', '-U', 'vimpaste', '-d', 'vimpaste']
+        initialDelaySeconds: 2
+        periodSeconds: 3
+
+    # -------------------------------------------------------
+    # 容器三：docker —— 构建并推送镜像
     # -------------------------------------------------------
     # 只装了 docker CLI，没有 Docker 守护进程；实际工作交给下面挂进来的
     # 宿主机 socket 上的守护进程执行。
@@ -68,7 +88,7 @@ spec:
           name: docker-sock
 
     # -------------------------------------------------------
-    # 容器三：gitops —— Git 操作与修改 YAML
+    # 容器四：gitops —— Git 操作与修改 YAML
     # -------------------------------------------------------
     # 基础 alpine 镜像，启动时现场安装 git 和 yq。它只做 Git 操作和改
     # YAML（GitOps），不需要操作 Docker 守护进程，因此不挂载
@@ -126,6 +146,30 @@ spec:
                     // --run 强制 vitest 跑一遍就退出，不进入 watch 模式
                     echo '正在运行单元测试（Vitest）...'
                     sh 'npm test -- --run'
+
+                    // v2：server/ 是独立 npm 包，用自己的工具链跑质量门
+                    echo '安装 server 依赖...'
+                    sh 'cd server && npm ci'
+                    echo '正在运行 server ESLint...'
+                    sh 'cd server && npm run lint'
+                    echo '正在运行 server 类型检查...'
+                    sh 'cd server && npm run typecheck'
+                    echo '正在等待测试数据库就绪...'
+                    sh '''
+                        timeout=60
+                        until node -e "const net=require('net');const s=net.connect(5432,'127.0.0.1');s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1))" 2>/dev/null; do
+                            timeout=$((timeout-2))
+                            if [ $timeout -le 0 ]; then echo 'postgres sidecar 未就绪'; exit 1; fi
+                            sleep 2
+                        done
+                    '''
+                    echo '正在应用测试库迁移...'
+                    // Prisma CLI 从 schema.prisma 的 env("DATABASE_URL") 读取迁移目标；
+                    // TEST_DATABASE_URL 仅供 Vitest 的测试辅助代码使用。
+                    sh 'cd server && DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npx prisma migrate deploy'
+                    echo '正在运行 server 集成测试（Vitest + Prisma）...'
+                    // server/package.json 的 test 脚本已经是 vitest --run，不能重复传 --run。
+                    sh 'cd server && TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@127.0.0.1:5432/vimpaste npm test'
                 }
             }
         }
@@ -175,6 +219,12 @@ spec:
                             // 只打 commit 短 SHA 标签并推送；按需求不打 latest
                             sh "docker build -t ${image} ."
                             sh "docker push ${image}"
+
+                            // v2：API 镜像（server/Dockerfile 多阶段，见文件头注释）
+                            def apiImage = "ghcr.io/${env.GHCR_USER.toLowerCase()}/vimpaste-api:${gitCommit}"
+                            echo "准备推送 API 镜像: ${apiImage}"
+                            sh "docker build -t ${apiImage} -f server/Dockerfile ."
+                            sh "docker push ${apiImage}"
 
                             sh "docker logout ghcr.io"
                         }
@@ -227,14 +277,25 @@ EOF
                             git config --global --add safe.directory "$(pwd)" || true
 
                             NEW_IMAGE="ghcr.io/kaiwenyao/vimpaste:$(git rev-parse --short HEAD)"
+                            NEW_API_IMAGE="ghcr.io/kaiwenyao/vimpaste-api:$(git rev-parse --short HEAD)"
 
-                            echo "部署镜像: $NEW_IMAGE"
+                            echo "部署镜像: $NEW_IMAGE / $NEW_API_IMAGE"
 
                             sed -i \
                               "s#image: ghcr.io/kaiwenyao/vimpaste:.*#image: ${NEW_IMAGE}#" \
                               gitops-repo/apps/vimpaste/deployment.yaml
 
-                            if git -C gitops-repo diff --quiet -- apps/vimpaste/deployment.yaml; then
+                            # v2 API 清单尚未合入 k3s-home 时跳过（合并本 PR 后把
+                            # deploy/k3s/ 的清单拷入 k3s-home 即启用）
+                            if [ -f gitops-repo/apps/vimpaste-api/deployment.yaml ]; then
+                                sed -i \
+                                  "s#image: ghcr.io/kaiwenyao/vimpaste-api:.*#image: ${NEW_API_IMAGE}#" \
+                                  gitops-repo/apps/vimpaste-api/deployment.yaml
+                            else
+                                echo "k3s-home 暂无 apps/vimpaste-api/deployment.yaml，跳过 API 镜像更新"
+                            fi
+
+                            if git -C gitops-repo diff --quiet; then
                                 echo "GitOps 清单已经是当前镜像，无需更新"
                                 exit 0
                             fi
@@ -242,7 +303,7 @@ EOF
                             git -C gitops-repo config user.name "Jenkins"
                             git -C gitops-repo config user.email "jenkins@vimpaste.local"
 
-                            git -C gitops-repo add apps/vimpaste/deployment.yaml
+                            git -C gitops-repo add apps/vimpaste apps/vimpaste-api 2>/dev/null || git -C gitops-repo add apps/vimpaste
                             git -C gitops-repo commit -m "deploy(vimpaste): ${NEW_IMAGE##*:}"
 
                             GIT_ASKPASS=/tmp/git-askpass.sh \

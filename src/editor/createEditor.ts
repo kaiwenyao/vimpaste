@@ -18,9 +18,11 @@ import type { Extension } from '@codemirror/state'
 import type { LangId } from '../detection/language'
 import { loadCmLanguage } from './cmLanguage'
 import { type EditorMode } from './editorMode'
-import { placeholderField, placeholderHighlight, placeholderRanges } from './placeholderField'
+import { editorKindFacet, placeholderField, placeholderHighlight, placeholderRanges } from './placeholderField'
+import { markdownLite } from './markdownLite'
 import { vimpasteSyntax, vimpasteTheme } from './theme'
 import { attachVimModeTracking, registerPlaceholderNavigation } from './vimSetup'
+import type { SnippetKind } from '../storage/snippets'
 
 export interface EditorCallbacks {
   onDocChanged(text: string): void
@@ -35,6 +37,8 @@ export interface EditorApi {
   view: EditorView
   setEditorMode(mode: EditorMode): void
   setLanguage(id: LangId): Promise<void>
+  /** 切换 command / prompt：prompt 开软换行、固定 markdown 轻高亮、占位符走 {{变量}} 规则 */
+  setKind(kind: SnippetKind): Promise<void>
   setDoc(text: string): void
   destroy(): void
 }
@@ -46,22 +50,33 @@ function editorModeExtensions(mode: EditorMode): Extension[] {
   return []
 }
 
+/** prompt 类型固定 markdown 轻高亮；command 类型按识别结果动态加载语言包 */
+async function languageExtensionFor(kind: SnippetKind, id: LangId): Promise<Extension | null> {
+  if (kind === 'prompt') return id === 'plaintext' ? null : markdownLite
+  return loadCmLanguage(id)
+}
+
 /**
  * 创建编辑器实例。
- * - 不启用 lineWrapping：长行横向滚动，绝不改变命令内容；
+ * - command 类型不启用 lineWrapping：长行横向滚动，绝不改变命令内容；
+ * - prompt 类型启用 lineWrapping（散文横向滚动无法阅读，§8）；
  * - 不启用 closeBrackets / autocompletion / 自动缩进：粘贴什么就是什么；
  * - drawSelection 是 Visual 模式正确渲染选区的前提（@replit/codemirror-vim 要求）。
  */
 export function createEditor(
   parent: HTMLElement,
   callbacks: EditorCallbacks,
-  options: { editorMode: EditorMode } = { editorMode: 'vim' },
+  options: { editorMode: EditorMode; kind?: SnippetKind } = { editorMode: 'vim' },
 ): EditorApi {
   // ]v / [v 映射为全局幂等注册
   registerPlaceholderNavigation()
 
   const modeCompartment = new Compartment()
   const languageCompartment = new Compartment()
+  const kindCompartment = new Compartment()
+  const wrapCompartment = new Compartment()
+
+  const initialKind: SnippetKind = options.kind ?? 'command'
 
   const updateListener = EditorView.updateListener.of((u) => {
     if (u.docChanged) {
@@ -99,6 +114,8 @@ export function createEditor(
     }),
     modeCompartment.of(editorModeExtensions(options.editorMode)),
     languageCompartment.of([]),
+    kindCompartment.of(editorKindFacet.of(initialKind)),
+    wrapCompartment.of(initialKind === 'prompt' ? EditorView.lineWrapping : []),
     keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap]),
   ]
 
@@ -112,6 +129,8 @@ export function createEditor(
   }
 
   let currentMode: EditorMode = options.editorMode
+  let currentKind: SnippetKind = initialKind
+  let currentLangId: LangId = 'plaintext'
 
   return {
     view,
@@ -126,9 +145,28 @@ export function createEditor(
       }
     },
     async setLanguage(id) {
-      const ext = await loadCmLanguage(id)
+      currentLangId = id
+      const ext = await languageExtensionFor(currentKind, id)
       if (!view.dom.isConnected) return
       view.dispatch({ effects: languageCompartment.reconfigure(ext ? [ext] : []) })
+    },
+    async setKind(kind) {
+      if (kind === currentKind) return
+      currentKind = kind
+      // prompt 固定 plaintext/markdown；command 回到当前识别语言
+      const langForKind: LangId =
+        kind === 'prompt' ? (currentLangId === 'markdown' ? 'markdown' : 'plaintext') : currentLangId
+      const ext = await languageExtensionFor(kind, langForKind)
+      if (!view.dom.isConnected) return
+      view.dispatch({
+        effects: [
+          kindCompartment.reconfigure(editorKindFacet.of(kind)),
+          wrapCompartment.reconfigure(kind === 'prompt' ? EditorView.lineWrapping : []),
+          languageCompartment.reconfigure(ext ? [ext] : []),
+        ],
+      })
+      // 类型切换会更换占位符规则（facet 已重算），重新上报计数给工具栏
+      callbacks.onPlaceholderCount(placeholderRanges(view.state).length)
     },
     setDoc(text) {
       view.dispatch({

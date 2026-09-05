@@ -1,0 +1,111 @@
+// VimPaste v2 数据模型（docs/plan-v2-accounts.md §5.1）。
+//
+// 设计要点：
+// - 单用户为主，但数据按多用户建模（所有业务表挂 ownerId），将来开放注册不用改表。
+// - Session 表只存 token 与 SESSION_SECRET 的 HMAC-SHA256：数据库单独泄露也
+//   拿不到可用凭据，且可单条吊销。
+// - Snippet 的 id 由客户端生成 UUID：离线新建的条目在同步前就有稳定 id，无需重映射。
+// - createdAt/updatedAt 由客户端提供（表达「三天前离线改的」），服务端只做合理性钳制；
+//   因此这里不用 @default(now()) / @updatedAt。
+// - deletedAt 是软删除墓碑：同步端据此在其它设备上删除，30 天后定时硬删。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions    Session[]
+  snippets    Snippet[]
+  collections Collection[]
+  tags        Tag[]
+}
+
+/// 服务端会话表：Cookie 里是随机 token，库里只存它与 SESSION_SECRET 的 HMAC-SHA256，可单条吊销
+model Session {
+  id        String   @id // hmac_sha256(token, SESSION_SECRET)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+
+  @@index([userId])
+}
+
+model Collection {
+  id        Int      @id @default(autoincrement())
+  name      String
+  color     String   @default("#c96442")
+  order     Int      @default(0)
+  ownerId   Int
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  snippets  Snippet[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, ownerId])
+  @@index([ownerId])
+}
+
+enum SnippetKind {
+  command
+  prompt
+}
+
+model Snippet {
+  /// 客户端生成的 UUID：离线新建的条目在同步前就有稳定 id，不需要 id 重映射
+  id      String      @id @db.Uuid
+  kind    SnippetKind
+  title   String
+  content String
+  /// 仅 command 有意义；取值由前端 isLangId() 白名单校验后写入
+  langId  String      @default("plaintext")
+
+  pinned     Boolean   @default(false)
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  tags         Tag[]
+
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime
+  updatedAt DateTime
+  /// 服务端写入时间戳（每次 create/update/删除置墓碑时由服务端赋值）。
+  /// updatedAt 由客户端时钟提供，不能做增量拉取游标——离线修改会带着更早的
+  /// 时间戳被后补推送，按 updatedAt 过滤会永久漏单；syncedAt 单调前进才可信。
+  syncedAt  DateTime  @default(now())
+  /// 软删除墓碑：同步端据此在其它设备上执行删除，30 天后由定时任务硬删
+  deletedAt DateTime?
+
+  @@index([ownerId, updatedAt])
+  @@index([ownerId, syncedAt])
+  @@index([ownerId, kind, updatedAt])
+}
+
+model Tag {
+  id        Int       @id @default(autoincrement())
+  name      String
+  ownerId   Int
+  owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  snippets  Snippet[]
+  createdAt DateTime  @default(now())
+
+  @@unique([name, ownerId])
+  @@index([ownerId])
+}

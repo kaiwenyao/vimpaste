@@ -133,3 +133,74 @@ export function IconShield(props: IconProps) {
     </svg>
   )
 }
+
+export function IconUser(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+    </svg>
+  )
+}
+
+export function IconPin(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z" />
+    </svg>
+  )
+}
+
+export function IconLock(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="5" y="11" width="14" height="9" rx="2.5" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
+export function IconCloud(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 18a4.5 4.5 0 0 1-.4-8.98A6 6 0 0 1 18.3 10.6 3.8 3.8 0 0 1 17.5 18H7Z" />
+    </svg>
+  )
+}
+
+export function IconDownload(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4v11M7 11l5 5 5-5" />
+      <path d="M5 20h14" />
+    </svg>
+  )
+}
+
+export function IconTerminal(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="m5 8 4 4-4 4" />
+      <path d="M12 17h7" />
+    </svg>
+  )
+}
+
+export function IconSparkles(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4c.5 3.4 1.6 4.5 5 5-3.4.5-4.5 1.6-5 5-.5-3.4-1.6-4.5-5-5 3.4-.5 4.5-1.6 5-5Z" />
+      <path d="M18.5 15.5c.25 1.6.8 2.15 2.5 2.5-1.7.35-2.25.9-2.5 2.5-.25-1.6-.8-2.15-2.5-2.5 1.7-.35 2.25-.9 2.5-2.5Z" />
+    </svg>
+  )
+}
+
+export function IconSync(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3" />
+      <path d="M20 4v4h-4M4 20v-4h4" />
+    </svg>
+  )
+}

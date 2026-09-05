@@ -1,0 +1,59 @@
+# 专用 Postgres 实例：生命周期与 VimPaste 绑定，不复用集群已有数据库
+#（plan-v2-accounts.md §1 决策表）。数据可靠性风险（无备份）已确认接受。
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vimpaste-postgres
+  labels:
+    app: vimpaste-postgres
+spec:
+  serviceName: vimpaste-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vimpaste-postgres
+  template:
+    metadata:
+      labels:
+        app: vimpaste-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+              name: pg
+          env:
+            - name: POSTGRES_USER
+              value: vimpaste
+            - name: POSTGRES_DB
+              value: vimpaste
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vimpaste-api-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ['pg_isready', '-U', 'vimpaste', '-d', 'vimpaste']
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ['ReadWriteOnce']
+        resources:
+          requests:
+            storage: 2Gi

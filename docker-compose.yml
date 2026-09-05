@@ -1,0 +1,47 @@
+services:
+  postgres:
+    # 版本与集群保持一致（plan-v2-accounts.md Phase 0）：
+    # 避免迁移在本地与 k3s 两侧行为不同
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: vimpaste
+      POSTGRES_PASSWORD: vimpaste
+      POSTGRES_DB: vimpaste
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vimpaste -d vimpaste']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      # 本地开发默认开放注册；生产用 DISABLE_REGISTRATION=true + create-user CLI
+      DATABASE_URL: postgresql://vimpaste:vimpaste@postgres:5432/vimpaste
+      SESSION_SECRET: local-dev-secret-0123456789abcdef0123456789abcdef
+      DISABLE_REGISTRATION: 'false'
+      PORT: '3000'
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    # 前端静态托管 + /api/ 同源反代（nginx.conf）；镜像默认 VITE_CLOUD_ENABLED=true
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

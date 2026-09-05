@@ -1,5 +1,5 @@
 import type { EditorMode } from '../editor/editorMode'
-import { IconShield } from './icons'
+import { IconCloud, IconShield, IconSync } from './icons'
 
 export interface StatusBarProps {
   editorMode: EditorMode
@@ -8,6 +8,20 @@ export interface StatusBarProps {
   col: number
   langLabel: string
   chars: number
+  /** prompt 类型：状态栏显示字数 + 预估 token（§8），替代语言与字符数 */
+  isPrompt?: boolean
+  words?: number
+  tokensEstimate?: number
+  /** 云端同步状态（VITE_CLOUD_ENABLED 时由 App 传入；缺省 = 匿名本地版，文案不动） */
+  cloudStatus?: CloudStatusView
+  onCloudRetry?: () => void
+}
+
+export interface CloudStatusView {
+  loggedIn: boolean
+  syncing: boolean
+  paused: boolean
+  lastSyncLabel: string | null
 }
 
 const MODE_CLASS: Record<string, string> = {
@@ -20,7 +34,64 @@ const MODE_CLASS: Record<string, string> = {
   REPLACE: 'replace',
 }
 
-export function StatusBar({ editorMode, vimMode, line, col, langLabel, chars }: StatusBarProps) {
+function CloudIndicator({
+  cloudStatus,
+  onCloudRetry,
+}: {
+  cloudStatus: CloudStatusView
+  onCloudRetry?: () => void
+}) {
+  if (!cloudStatus.loggedIn) {
+    return (
+      <span className="privacy">
+        <IconCloud size={13} />
+        <span>本地 · 未登录</span>
+      </span>
+    )
+  }
+  if (cloudStatus.paused) {
+    return (
+      <button
+        type="button"
+        className="privacy privacy-retry"
+        onClick={onCloudRetry}
+        aria-label="手动重试同步"
+        title="同步暂停，点击重试"
+      >
+        <IconSync size={13} />
+        <span>同步暂停 · 重试中</span>
+      </button>
+    )
+  }
+  if (cloudStatus.syncing) {
+    return (
+      <span className="privacy">
+        <IconSync size={13} />
+        <span>同步中…</span>
+      </span>
+    )
+  }
+  return (
+    <span className="privacy">
+      <IconCloud size={13} />
+      <span>{cloudStatus.lastSyncLabel ? `已同步 · ${cloudStatus.lastSyncLabel}` : '已登录 · 待同步'}</span>
+    </span>
+  )
+}
+
+export function StatusBar({
+  editorMode,
+  vimMode,
+  line,
+  col,
+  langLabel,
+  chars,
+  isPrompt,
+  words,
+  tokensEstimate,
+  cloudStatus,
+  onCloudRetry,
+}: StatusBarProps) {
   const mode = editorMode === 'vim' ? (vimMode ?? 'NORMAL') : null
   const offMode = editorMode === 'emacs' ? 'emacs' : 'off'
   const offLabel = editorMode === 'emacs' ? 'EMACS' : '—'
@@ -35,13 +106,26 @@ export function StatusBar({ editorMode, vimMode, line, col, langLabel, chars }: 
       <span className="status-item">
         行 {line}，列 {col}
       </span>
-      <span className="status-item">{langLabel}</span>
-      <span className="status-item">{chars} 字符</span>
+      {!isPrompt && <span className="status-item">{langLabel}</span>}
+      {isPrompt ? (
+        <>
+          <span className="status-item">{words ?? 0} 字</span>
+          <span className="status-item" title="按字符数 / 4 粗略估算">
+            约 {tokensEstimate ?? 0} tokens（估算）
+          </span>
+        </>
+      ) : (
+        <span className="status-item">{chars} 字符</span>
+      )}
       <span className="spacer" />
-      <span className="privacy">
-        <IconShield size={13} />
-        <span>Local only · 未上传</span>
-      </span>
+      {cloudStatus ? (
+        <CloudIndicator cloudStatus={cloudStatus} onCloudRetry={onCloudRetry} />
+      ) : (
+        <span className="privacy">
+          <IconShield size={13} />
+          <span>Local only · 未上传</span>
+        </span>
+      )}
     </footer>
   )
 }

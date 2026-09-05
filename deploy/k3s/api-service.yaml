@@ -1,0 +1,14 @@
+# web 的 nginx 通过该 Service 反代 /api/（见根目录 nginx.conf）
+apiVersion: v1
+kind: Service
+metadata:
+  name: vimpaste-api
+  labels:
+    app: vimpaste-api
+spec:
+  selector:
+    app: vimpaste-api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

@@ -1,29 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CodeMirrorEditor } from './components/CodeMirrorEditor'
+import { EntryMetaBar, VariableFillBar } from './components/EntryBar'
 import { HelpDialog } from './components/HelpDialog'
 import { HistoryPanel } from './components/HistoryPanel'
+import type { SnippetKindFilter } from './components/HistoryPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
+import type { CloudStatusView } from './components/StatusBar'
 import { Toolbar } from './components/Toolbar'
 import { IconCheck, IconClose } from './components/icons'
 import type { LangId } from './detection/language'
 import { detectLanguage, languageLabel } from './detection/language'
+import { fillPromptTemplate, parsePromptVariables } from './detection/placeholders'
 import type { EditorApi } from './editor/createEditor'
 import { isEditorMode, normalizeFontSize } from './editor/editorMode'
 import type { EditorMode } from './editor/editorMode'
 import { jumpToPlaceholder } from './editor/navigation'
-import {
-  createHistoryId,
-  deriveTitle,
-  loadHistory,
-  saveHistory,
-  upsertHistory,
-} from './storage/history'
-import type { HistoryEntry } from './storage/history'
+import type { CloudSession } from './cloud/session'
+import type { SyncStatus } from './cloud/sync'
+import type { ApiCollection } from './cloud/api'
+import type { Snippet, SnippetKind } from './storage/snippets'
+import { LOCAL_SNIPPET_STORAGE, MAX_TAGS_PER_SNIPPET, MAX_TAG_CHARS } from './storage/snippets'
+import { LocalSnippetStore } from './storage/SnippetStore'
+import type { SnippetStore } from './storage/SnippetStore'
 import { loadPrefs, savePrefs } from './storage/prefs'
+import { createHistoryId, deriveTitle } from './storage/history'
 import { isThemeId } from './theme/themes'
 import type { ThemeId } from './theme/themes'
 import { copyText } from './utils/clipboard'
+import { countWords, estimateTokens } from './utils/textStats'
+import { lastVarValues, rememberVarValues } from './utils/varfill'
+import { formatRelativeTime } from './utils/time'
 
 const DETECT_DEBOUNCE_MS = 400
 const CLEAR_ARM_MS = 4000
@@ -60,6 +67,17 @@ declare global {
   }
 }
 
+/** 云端对话框仅在 VITE_CLOUD_ENABLED=true 的构建里存在（define 替换后整支摇掉） */
+const AccountDialog =
+  import.meta.env.VITE_CLOUD_ENABLED === 'true'
+    ? lazy(() => import('./cloud/ui/AccountDialog').then((m) => ({ default: m.AccountDialog })))
+    : null
+
+/** 墓碑条目（云端软删除）不进 UI 列表 */
+function alive(list: Snippet[]): Snippet[] {
+  return list.filter((s) => s.deletedAt == null)
+}
+
 export default function App() {
   const editorRef = useRef<EditorApi | null>(null)
   const [content, setContent] = useState('')
@@ -71,7 +89,8 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(() => loadPrefs().fontSize)
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
-  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory())
+  const [store, setStore] = useState<SnippetStore>(() => new LocalSnippetStore(LOCAL_SNIPPET_STORAGE))
+  const [history, setHistory] = useState<Snippet[]>(() => alive(store.current()))
   const [historyEnabled, setHistoryEnabled] = useState(() => loadPrefs().historyEnabled)
   // 桌面宽视口默认固定展示；窄视口抽屉不自动弹出（避免一进页面就盖住编辑器）
   const [historyOpen, setHistoryOpen] = useState(
@@ -81,6 +100,8 @@ export default function App() {
     () => window.matchMedia(DOCKED_HISTORY_QUERY).matches,
   )
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
+  const [editorKind, setEditorKind] = useState<SnippetKind>('command')
+  const [kindFilter, setKindFilter] = useState<SnippetKindFilter>('all')
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -88,6 +109,14 @@ export default function App() {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null)
   const [swUpdateReady, setSwUpdateReady] = useState(false)
+  // 云端（VITE_CLOUD_ENABLED）状态；匿名构建恒为 null / idle
+  const [cloudUser, setCloudUser] = useState<{ email: string } | null>(null)
+  const [cloudSession, setCloudSession] = useState<CloudSession | null>(null)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: 'idle', lastSyncAt: null })
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [collections, setCollections] = useState<ApiCollection[]>([])
+  const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null)
+  const [varValues, setVarValues] = useState<Record<string, string>>({})
 
   const toastTimer = useRef(0)
   const clearTimer = useRef(0)
@@ -100,6 +129,9 @@ export default function App() {
   const historyEnabledRef = useRef(historyEnabled)
   const activeEntryIdRef = useRef<string | null>(activeEntryId)
   const historyDockedRef = useRef(historyDocked)
+  const editorKindRef = useRef(editorKind)
+  const storeRef = useRef(store)
+  const sessionRef = useRef<CloudSession | null>(null)
 
   useEffect(() => {
     historyRef.current = history
@@ -116,6 +148,28 @@ export default function App() {
   useEffect(() => {
     historyDockedRef.current = historyDocked
   }, [historyDocked])
+  useEffect(() => {
+    editorKindRef.current = editorKind
+  }, [editorKind])
+  useEffect(() => {
+    storeRef.current = store
+  }, [store])
+  useEffect(() => {
+    sessionRef.current = cloudSession
+  }, [cloudSession])
+
+  // store 换绑（登录 / 登出）或条目变化：同步快照到 React 状态（墓碑不进 UI）
+  useEffect(() => {
+    const apply = (list: Snippet[]) => {
+      historyRef.current = alive(list)
+      setHistory(historyRef.current)
+    }
+    apply(store.current())
+    return store.subscribe(apply)
+  }, [store])
+
+  /** 活动条目（编辑中的那条） */
+  const activeEntry = history.find((e) => e.id === activeEntryId) ?? null
 
   // 跟随视口宽度在「固定面板」与「抽屉」间切换。跨界时按已存偏好重同步瞬态显隐，
   // 避免面板开着拖窄变成遮挡抽屉、或抽屉关着拖宽后面板不按偏好恢复（只改瞬态，不写偏好）
@@ -146,21 +200,52 @@ export default function App() {
     return () => window.removeEventListener('vimpaste:update-ready', onUpdateReady)
   }, [])
 
-  // 语言自动检测：防抖；用户手动选择后本次内容不再自动覆盖
+  // 云端会话静默恢复（VITE_CLOUD_ENABLED 构建；匿名构建整段摇掉）
   useEffect(() => {
-    if (manualOverride) return
+    if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+    let disposed = false
+    void (async () => {
+      const { restoreSession } = await import('./cloud/session')
+      const session = await restoreSession({ onStatus: setSyncStatus })
+      if (disposed || !session) return
+      sessionRef.current = session
+      setCloudSession(session)
+      setCloudUser(session.user)
+      setSyncStatus(session.engine.currentStatus())
+      setStore(session.store)
+      const { cloudApi } = await import('./cloud/api')
+      try {
+        setCollections(await cloudApi.collections())
+      } catch {
+        /* 集合加载失败不阻塞编辑，下次登录/同步时重试 */
+      }
+    })()
+    return () => {
+      disposed = true
+      sessionRef.current?.engine.stop()
+    }
+  }, [])
+
+  // 语言自动检测：防抖；用户手动选择后本次内容不再自动覆盖；prompt 类型关闭识别（§8）
+  useEffect(() => {
+    if (manualOverride || editorKind === 'prompt') return
     const timer = window.setTimeout(() => {
       void detectLanguage(content).then((id) => setLangId(id))
     }, DETECT_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [content, manualOverride])
+  }, [content, manualOverride, editorKind])
+
+  // 编辑器类型（command / prompt）切换到编辑器实例
+  useEffect(() => {
+    void editorRef.current?.setKind(editorKind)
+  }, [editorKind])
 
   // 应用编辑器键位模式到编辑器实例（编辑器内部对未变化的 mode 提前返回）
   useEffect(() => {
     editorRef.current?.setEditorMode(editorMode)
   }, [editorMode])
 
-  // 持久化非敏感偏好（编辑内容只随粘贴历史功能保存在 vimpaste.history.v1）
+  // 持久化非敏感偏好（编辑内容只随片段功能保存在历史存储键中）
   // historyPanelOpen 只由用户显式切换时写入（见 setHistoryPanelOpen），避免窄视口加载时覆盖桌面端的展开偏好
   useEffect(() => {
     savePrefs({
@@ -232,38 +317,41 @@ export default function App() {
     if (isThemeId(next)) setTheme(next)
   }, [])
 
-  /** 把当前编辑器内容写入/更新历史快照（新建或续写当前条目；与最近一条相同则复用） */
+  /** 把当前编辑器内容写入/更新片段快照（新建或续写当前条目；与最近一条相同则复用） */
   const commitSnapshot = useCallback(() => {
     const text = contentRef.current
     if (!historyEnabledRef.current || text.trim() === '') return
     const now = Date.now()
     const current = historyRef.current
     const prevId = activeEntryIdRef.current
+    const kind = editorKindRef.current
+    const langForKind: LangId =
+      kind === 'prompt' ? (langIdRef.current === 'markdown' ? 'markdown' : 'plaintext') : langIdRef.current
     const target =
       (prevId ? current.find((e) => e.id === prevId) : undefined) ??
       (current[0] && current[0].content === text ? current[0] : undefined)
-    const entry: HistoryEntry = target
+    const entry: Snippet = target
       ? {
           ...target,
           content: text,
-          langId: langIdRef.current,
+          langId: (target.kind ?? 'command') === 'prompt' ? langForKind : langIdRef.current,
           title: deriveTitle(text),
           updatedAt: now,
+          syncState: sessionRef.current ? 'pending' : 'local',
         }
       : {
           id: createHistoryId(),
           title: deriveTitle(text),
           content: text,
-          langId: langIdRef.current,
+          langId: langForKind,
           createdAt: now,
           updatedAt: now,
+          kind,
+          syncState: sessionRef.current ? 'pending' : 'local',
         }
     activeEntryIdRef.current = entry.id
     setActiveEntryId(entry.id)
-    const next = upsertHistory(current, entry)
-    historyRef.current = next
-    setHistory(next)
-    saveHistory(next)
+    storeRef.current.upsert(entry)
   }, [])
 
   // 防抖快照：停止输入 1.5s 后落盘；清空时的解除关联在 handleDocChanged 里完成
@@ -312,7 +400,9 @@ export default function App() {
       }
       activeEntryIdRef.current = id
       setActiveEntryId(id)
-      setLangId(entry.langId)
+      const entryKind = entry.kind ?? 'command'
+      setEditorKind(entryKind)
+      setLangId(entryKind === 'prompt' && entry.langId !== 'markdown' ? 'plaintext' : entry.langId)
       setManualOverride(true)
       editorRef.current?.setDoc(entry.content)
       editorRef.current?.view.focus()
@@ -323,10 +413,8 @@ export default function App() {
   )
 
   const handleDeleteEntry = useCallback((id: string) => {
-    const next = historyRef.current.filter((e) => e.id !== id)
-    historyRef.current = next
-    setHistory(next)
-    saveHistory(next)
+    // 云端模式：remove 触发 onRemove 钩子 → 入队软删除（墓碑由服务端传播）
+    storeRef.current.remove(id)
     if (activeEntryIdRef.current === id) {
       activeEntryIdRef.current = null
       setActiveEntryId(null)
@@ -334,9 +422,14 @@ export default function App() {
   }, [])
 
   const handleClearHistory = useCallback(() => {
-    historyRef.current = []
-    setHistory([])
-    saveHistory([])
+    const session = sessionRef.current
+    if (session) {
+      // 云端模式：清空 = 全部软删除（仅本地条目直接丢弃，不惊动服务器）
+      for (const s of historyRef.current) {
+        if (!s.localOnly) session.engine.enqueueDelete(s.id)
+      }
+    }
+    storeRef.current.replaceAll([])
     activeEntryIdRef.current = null
     setActiveEntryId(null)
   }, [])
@@ -357,10 +450,202 @@ export default function App() {
 
   const handleNewPaste = useCallback(() => {
     if (contentRef.current.trim() !== '') commitSnapshot()
+    setEditorKind('command')
+    // 从 prompt 形态切回：解除手动覆盖，语言识别重新接管（内容为空时归位纯文本）
+    setManualOverride(false)
+    setLangId((prev) => (prev === 'markdown' ? 'plaintext' : prev))
     editorRef.current?.setDoc('')
     editorRef.current?.view.focus()
     if (!historyDockedRef.current) setHistoryOpen(false)
   }, [commitSnapshot])
+
+  /** 新建 Prompt：编辑器切到 prompt 形态（软换行 + {{变量}} 占位符），不识别语言 */
+  const handleNewPrompt = useCallback(() => {
+    if (contentRef.current.trim() !== '') commitSnapshot()
+    activeEntryIdRef.current = null
+    setActiveEntryId(null)
+    setEditorKind('prompt')
+    setLangId('markdown')
+    setManualOverride(true)
+    editorRef.current?.setDoc('')
+    editorRef.current?.view.focus()
+    if (!historyDockedRef.current) setHistoryOpen(false)
+  }, [commitSnapshot])
+
+  const handleTogglePin = useCallback((id: string) => {
+    const entry = historyRef.current.find((e) => e.id === id)
+    if (!entry) return
+    storeRef.current.upsert({
+      ...entry,
+      pinned: !entry.pinned,
+      syncState: sessionRef.current ? 'pending' : 'local',
+    })
+  }, [])
+
+  /** 「仅本地」开关（§7.4）：已同步条目先向服务端发一次删除再转本地 */
+  const handleToggleLocalOnly = useCallback((id: string) => {
+    const entry = historyRef.current.find((e) => e.id === id)
+    if (!entry) return
+    const session = sessionRef.current
+    const now = Date.now()
+    if (entry.localOnly) {
+      // 解除仅本地：转为待同步条目（钩子会入队推送）
+      storeRef.current.upsert({
+        ...entry,
+        localOnly: false,
+        syncState: 'pending',
+        updatedAt: now,
+      })
+      return
+    }
+    if (session && entry.syncState === 'synced') {
+      session.engine.enqueueDelete(entry.id)
+      void session.engine.flush()
+    }
+    storeRef.current.upsert({
+      ...entry,
+      localOnly: true,
+      syncState: 'local',
+      deletedAt: null,
+      updatedAt: now,
+    })
+  }, [])
+
+  const handleTagsChange = useCallback((id: string, tags: string[]) => {
+    const entry = historyRef.current.find((e) => e.id === id)
+    if (!entry) return
+    // 与服务端 schema（tags ≤ 20 个、单个 ≤ 64 字符）对齐：超限的标签若原样入队，
+    // sync 会整批 400 且无限重试，堵死后续所有同步
+    const sanitized = [
+      ...new Set(
+        tags
+          .map((t) => t.trim())
+          .filter((t) => t !== '')
+          .map((t) => (t.length > MAX_TAG_CHARS ? t.slice(0, MAX_TAG_CHARS) : t)),
+      ),
+    ].slice(0, MAX_TAGS_PER_SNIPPET)
+    storeRef.current.upsert({
+      ...entry,
+      tags: sanitized,
+      syncState: sessionRef.current ? 'pending' : 'local',
+      updatedAt: Date.now(),
+    })
+  }, [])
+
+  const handleCollectionChange = useCallback((id: string, collectionId: number | null) => {
+    const entry = historyRef.current.find((e) => e.id === id)
+    if (!entry) return
+    storeRef.current.upsert({
+      ...entry,
+      collectionId,
+      syncState: sessionRef.current ? 'pending' : 'local',
+      updatedAt: Date.now(),
+    })
+  }, [])
+
+  /** 「导出全部为 JSON」：不做服务端备份之后用户手里唯一的兜底（§10 风险 5） */
+  const handleExport = useCallback(() => {
+    const data = historyRef.current.map((s) => ({
+      id: s.id,
+      kind: s.kind ?? 'command',
+      title: s.title,
+      content: s.content,
+      langId: s.langId,
+      pinned: s.pinned === true,
+      localOnly: s.localOnly === true,
+      tags: s.tags ?? [],
+      createdAt: new Date(s.createdAt).toISOString(),
+      updatedAt: new Date(s.updatedAt).toISOString(),
+    }))
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), snippets: data }, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vimpaste-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('已导出 JSON 文件', 'ok')
+  }, [showToast])
+
+  // —— 集合管理（云端模式；运行时动态 import 云模块）——
+  const refreshCollections = useCallback(async () => {
+    if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+    const { cloudApi } = await import('./cloud/api')
+    setCollections(await cloudApi.collections())
+  }, [])
+
+  const handleCreateCollection = useCallback(
+    async (name: string) => {
+      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+      try {
+        const { cloudApi } = await import('./cloud/api')
+        await cloudApi.createCollection(name)
+        await refreshCollections()
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : '集合创建失败', 'err')
+      }
+    },
+    [refreshCollections, showToast],
+  )
+
+  const handleRenameCollection = useCallback(
+    async (id: number, name: string) => {
+      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+      try {
+        const { cloudApi } = await import('./cloud/api')
+        await cloudApi.renameCollection(id, name)
+        await refreshCollections()
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : '集合重命名失败', 'err')
+      }
+    },
+    [refreshCollections, showToast],
+  )
+
+  const handleDeleteCollection = useCallback(
+    async (id: number) => {
+      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+      try {
+        const { cloudApi } = await import('./cloud/api')
+        await cloudApi.deleteCollection(id)
+        await refreshCollections()
+        setActiveCollectionId((prev) => (prev === id ? null : prev))
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : '集合删除失败', 'err')
+      }
+    },
+    [refreshCollections, showToast],
+  )
+
+  // —— 云端会话接线（对话框回调）——
+  const handleSessionReady = useCallback((session: CloudSession, nextCollections: ApiCollection[]) => {
+    sessionRef.current = session
+    setCloudSession(session)
+    setCloudUser(session.user)
+    setSyncStatus(session.engine.currentStatus())
+    setStore(session.store)
+    setCollections(nextCollections)
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+    const session = sessionRef.current
+    sessionRef.current = null
+    setCloudSession(null)
+    setCloudUser(null)
+    setCollections([])
+    setActiveCollectionId(null)
+    setSyncStatus({ state: 'idle', lastSyncAt: null })
+    if (session) await session.destroy()
+    const { localStoreAfterLogout } = await import('./cloud/session')
+    setStore(localStoreAfterLogout())
+  }, [])
+
+  const handleRetrySync = useCallback(() => {
+    sessionRef.current?.engine.retryNow()
+  }, [])
 
   const showCopyFeedback = useCallback((feedback: CopyFeedback) => {
     window.clearTimeout(copyTimer.current)
@@ -384,6 +669,35 @@ export default function App() {
       })
   }, [content, showCopyFeedback, commitSnapshot])
 
+  /** 填充并复制（§8 Phase 6）：只影响复制内容，原文不动；记住本次填的值（仅本地） */
+  const handleFillAndCopy = useCallback(async () => {
+    const entry = activeEntry
+    if (!entry) return
+    rememberVarValues(entry.id, varValues)
+    const filled = fillPromptTemplate(entry.content, varValues)
+    const channel = await copyText(filled)
+    if (channel === 'failed') {
+      showCopyFeedback({ kind: 'err', text: '复制失败，请手动全选后按 Ctrl/Cmd+C', note: '' })
+      return
+    }
+    showToast(`已按变量填充并复制（${filled.length} 字符）`, 'ok')
+  }, [activeEntry, varValues, showCopyFeedback, showToast])
+
+  const handleVarChange = useCallback((name: string, value: string) => {
+    setVarValues((prev) => ({ ...prev, [name]: value }))
+  }, [])
+
+  // 活动条目切换时恢复该条目各变量的上次填写值（仅本地记忆）。
+  // 渲染期重置模式：只跟随 entry.id（内容变化不重置，避免清掉正在输入的值）
+  const [varEntryId, setVarEntryId] = useState<string | null>(activeEntry?.id ?? null)
+  if (varEntryId !== (activeEntry?.id ?? null)) {
+    setVarEntryId(activeEntry?.id ?? null)
+    const entry = activeEntry
+    const names =
+      entry && (entry.kind ?? 'command') === 'prompt' ? parsePromptVariables(entry.content) : []
+    setVarValues(lastVarValues(entry?.id ?? '', names))
+  }
+
   const handleClear = useCallback(() => {
     if (content !== '' && !clearArmed) {
       setClearArmed(true)
@@ -401,6 +715,27 @@ export default function App() {
     if (api) jumpToPlaceholder(api.view, dir)
   }, [])
 
+  const filteredByCollection = activeCollectionId === null
+    ? history
+    : history.filter((s) => s.collectionId === activeCollectionId)
+
+  const cloudStatusView: CloudStatusView | undefined =
+    import.meta.env.VITE_CLOUD_ENABLED === 'true'
+      ? {
+          loggedIn: cloudUser !== null,
+          syncing: syncStatus.state === 'syncing',
+          paused: syncStatus.state === 'paused',
+          lastSyncLabel:
+            syncStatus.lastSyncAt === null ? null : formatRelativeTime(syncStatus.lastSyncAt),
+        }
+      : undefined
+
+  const isPrompt = editorKind === 'prompt'
+  const promptVarNames = useMemo(
+    () => (activeEntry && (activeEntry.kind ?? 'command') === 'prompt' ? parsePromptVariables(activeEntry.content) : []),
+    [activeEntry],
+  )
+
   return (
     <div className="app">
       <Toolbar
@@ -408,6 +743,7 @@ export default function App() {
         langAuto={!manualOverride}
         manualOverride={manualOverride}
         onLanguageChange={handleLanguageChange}
+        promptMode={isPrompt}
         theme={theme}
         onThemeChange={handleThemeChange}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -422,6 +758,9 @@ export default function App() {
         clearArmed={clearArmed}
         onClear={handleClear}
         onHelp={() => setHelpOpen(true)}
+        cloudEnabled={import.meta.env.VITE_CLOUD_ENABLED === 'true'}
+        accountLabel={cloudUser ? cloudUser.email.split('@')[0] : null}
+        onOpenAccount={() => setAccountOpen(true)}
       />
 
       {swUpdateReady && (
@@ -442,7 +781,7 @@ export default function App() {
           <HistoryPanel
             variant="docked"
             open
-            entries={history}
+            entries={filteredByCollection}
             enabled={historyEnabled}
             activeId={activeEntryId}
             onClose={() => setHistoryPanelOpen(false)}
@@ -451,6 +790,18 @@ export default function App() {
             onClearAll={handleClearHistory}
             onToggleEnabled={handleHistoryEnabledChange}
             onNewPaste={handleNewPaste}
+            onNewPrompt={handleNewPrompt}
+            kindFilter={kindFilter}
+            onKindFilterChange={setKindFilter}
+            cloudMode={cloudUser !== null}
+            collections={collections}
+            activeCollectionId={activeCollectionId}
+            onSelectCollection={setActiveCollectionId}
+            onCreateCollection={handleCreateCollection}
+            onRenameCollection={handleRenameCollection}
+            onDeleteCollection={handleDeleteCollection}
+            onTogglePin={handleTogglePin}
+            onExport={handleExport}
           />
         )}
 
@@ -470,6 +821,26 @@ export default function App() {
                 <IconClose size={11} />
               </button>
             </aside>
+          )}
+
+          {activeEntry && (
+            <EntryMetaBar
+              entry={activeEntry}
+              collections={collections}
+              onTogglePin={handleTogglePin}
+              onToggleLocalOnly={handleToggleLocalOnly}
+              onTagsChange={handleTagsChange}
+              onCollectionChange={handleCollectionChange}
+            />
+          )}
+
+          {promptVarNames.length > 0 && (
+            <VariableFillBar
+              names={promptVarNames}
+              values={varValues}
+              onChange={handleVarChange}
+              onFillAndCopy={() => void handleFillAndCopy()}
+            />
           )}
 
           {/* 复制成功时整框描一圈鼠尾草绿：余光可见，不必回头看按钮 */}
@@ -513,6 +884,11 @@ export default function App() {
         col={cursor.col}
         langLabel={languageLabel(langId)}
         chars={content.length}
+        isPrompt={isPrompt}
+        words={countWords(content)}
+        tokensEstimate={estimateTokens(content.length)}
+        cloudStatus={cloudStatusView}
+        onCloudRetry={handleRetrySync}
       />
 
       <SettingsDialog
@@ -532,7 +908,7 @@ export default function App() {
         <HistoryPanel
           variant="drawer"
           open
-          entries={history}
+          entries={filteredByCollection}
           enabled={historyEnabled}
           activeId={activeEntryId}
           // 抽屉的 Esc / 遮罩 / ✕ 关闭都只改瞬态，不写 historyPanelOpen
@@ -542,7 +918,34 @@ export default function App() {
           onClearAll={handleClearHistory}
           onToggleEnabled={handleHistoryEnabledChange}
           onNewPaste={handleNewPaste}
+          onNewPrompt={handleNewPrompt}
+          kindFilter={kindFilter}
+          onKindFilterChange={setKindFilter}
+          cloudMode={cloudUser !== null}
+          collections={collections}
+          activeCollectionId={activeCollectionId}
+          onSelectCollection={setActiveCollectionId}
+          onCreateCollection={handleCreateCollection}
+          onRenameCollection={handleRenameCollection}
+          onDeleteCollection={handleDeleteCollection}
+          onTogglePin={handleTogglePin}
+          onExport={handleExport}
         />
+      )}
+
+      {AccountDialog && accountOpen && (
+        <Suspense fallback={null}>
+          <AccountDialog
+            open
+            onClose={() => setAccountOpen(false)}
+            session={cloudSession}
+            syncStatus={syncStatus}
+            onStatus={setSyncStatus}
+            onSessionReady={handleSessionReady}
+            onLogout={handleLogout}
+            onRetrySync={handleRetrySync}
+          />
+        </Suspense>
       )}
 
       {toast && (
