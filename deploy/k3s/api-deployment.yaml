@@ -40,9 +40,9 @@ spec:
                 secretKeyRef:
                   name: vimpaste-api-secrets
                   key: SESSION_SECRET
-            # 单人自托管：注册保持关闭，首个账号用 server 包的 create-user CLI 创建
+            # 注册已开放；需要收紧时改回 "true"，账号用 server 包的 create-user CLI 创建
             - name: DISABLE_REGISTRATION
-              value: "true"
+              value: "false"
           readinessProbe:
             httpGet:
               path: /api/readyz
