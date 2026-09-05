@@ -1,6 +1,6 @@
 import { EditorView } from '@codemirror/view'
 import { placeholderRanges } from './placeholderField'
-import type { PlaceholderMatch } from '../detection/placeholders'
+import type { AnyPlaceholderMatch } from './placeholderField'
 
 /**
  * 占位符导航：跳到下一个/上一个占位符并选中其文本，方便立即替换。
@@ -10,7 +10,7 @@ export function jumpToPlaceholder(view: EditorView, dir: 1 | -1): boolean {
   const ranges = placeholderRanges(view.state)
   if (ranges.length === 0) return false
   const pos = view.state.selection.main.head
-  let target: PlaceholderMatch | undefined
+  let target: AnyPlaceholderMatch | undefined
   if (dir > 0) {
     target = ranges.find((r) => r.start > pos) ?? ranges[0]
   } else {
@@ -22,6 +22,7 @@ export function jumpToPlaceholder(view: EditorView, dir: 1 | -1): boolean {
     }
     target ??= ranges[ranges.length - 1]
   }
+  if (!target) return false
   view.dispatch({
     selection: { anchor: target.start, head: target.end },
     effects: EditorView.scrollIntoView(target.start, { y: 'center' }),

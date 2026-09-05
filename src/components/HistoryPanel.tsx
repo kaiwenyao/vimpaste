@@ -1,14 +1,26 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { languageLabel } from '../detection/language'
-import type { HistoryEntry } from '../storage/history'
+import type { Snippet, SnippetKind } from '../storage/snippets'
 import { formatRelativeTime, historyGroupLabel } from '../utils/time'
-import { IconClose, IconHistory, IconPlus, IconSearch, IconTrash } from './icons'
+import type { ApiCollection } from '../cloud/api'
+import {
+  IconClose,
+  IconDownload,
+  IconHistory,
+  IconLock,
+  IconPin,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+} from './icons'
+
+export type SnippetKindFilter = 'all' | SnippetKind
 
 export interface HistoryPanelProps {
   open: boolean
   /** docked：桌面端固定在左侧、参与布局；drawer：窄视口下覆盖式弹出抽屉 */
   variant: 'docked' | 'drawer'
-  entries: HistoryEntry[]
+  entries: Snippet[]
   enabled: boolean
   /** 当前编辑器中已恢复（或正在编辑）的条目 */
   activeId: string | null
@@ -18,11 +30,25 @@ export interface HistoryPanelProps {
   onClearAll: () => void
   onToggleEnabled: (next: boolean) => void
   onNewPaste: () => void
+  /** —— v2 新增（均为可选，匿名路径行为不变）—— */
+  onNewPrompt?: () => void
+  kindFilter?: SnippetKindFilter
+  onKindFilterChange?: (filter: SnippetKindFilter) => void
+  /** 云端模式：显示集合管理与同步说明（匿名路径保持「仅保存在本浏览器」） */
+  cloudMode?: boolean
+  collections?: ApiCollection[]
+  activeCollectionId?: number | null
+  onSelectCollection?: (id: number | null) => void
+  onCreateCollection?: (name: string) => Promise<void>
+  onRenameCollection?: (id: number, name: string) => Promise<void>
+  onDeleteCollection?: (id: number) => Promise<void>
+  onTogglePin?: (id: string) => void
+  onExport?: () => void
 }
 
 interface HistoryGroup {
   label: string
-  items: HistoryEntry[]
+  items: Snippet[]
 }
 
 /** 分组标题的英文副标：中文标题本身是稳定的可访问文本，英文只作装饰 */
@@ -34,9 +60,15 @@ const GROUP_EN: Record<string, string> = {
   更早: 'Earlier',
 }
 
+const KIND_FILTERS: { id: SnippetKindFilter; label: string; en: string }[] = [
+  { id: 'all', label: '全部', en: 'All' },
+  { id: 'command', label: '命令', en: 'Commands' },
+  { id: 'prompt', label: 'Prompt', en: 'Prompts' },
+]
+
 const CLEAR_ARM_MS = 4000
 
-function groupEntries(entries: HistoryEntry[]): HistoryGroup[] {
+function groupEntries(entries: Snippet[]): HistoryGroup[] {
   const groups: HistoryGroup[] = []
   for (const entry of entries) {
     const label = historyGroupLabel(entry.updatedAt)
@@ -47,7 +79,7 @@ function groupEntries(entries: HistoryEntry[]): HistoryGroup[] {
   return groups
 }
 
-/** 粘贴历史面板：分组列表、搜索、悬停删除、清空确认、开关；桌面固定展示，窄视口为抽屉 */
+/** 片段库面板：分组列表、搜索、类型筛选、置顶/仅本地标记、集合管理；桌面固定，窄视口抽屉 */
 export function HistoryPanel(props: HistoryPanelProps) {
   const {
     open,
@@ -61,10 +93,25 @@ export function HistoryPanel(props: HistoryPanelProps) {
     onClearAll,
     onToggleEnabled,
     onNewPaste,
+    onNewPrompt,
+    kindFilter = 'all',
+    onKindFilterChange,
+    cloudMode = false,
+    collections = [],
+    activeCollectionId = null,
+    onSelectCollection,
+    onCreateCollection,
+    onRenameCollection,
+    onDeleteCollection,
+    onTogglePin,
+    onExport,
   } = props
 
   const [query, setQuery] = useState('')
   const [clearArmed, setClearArmed] = useState(false)
+  const [collectionName, setCollectionName] = useState('')
+  const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const searchRef = useRef<HTMLInputElement | null>(null)
   const clearTimer = useRef(0)
 
@@ -91,13 +138,23 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return entries
-    return entries.filter(
+    let list = entries
+    if (kindFilter !== 'all') list = list.filter((e) => (e.kind ?? 'command') === kindFilter)
+    if (!q) return list
+    return list.filter(
       (e) => e.title.toLowerCase().includes(q) || e.content.toLowerCase().includes(q),
     )
-  }, [entries, query])
+  }, [entries, query, kindFilter])
 
-  const groups = useMemo(() => groupEntries(filtered), [filtered])
+  // 置顶条目排到每组最前（updatedAt 分组内保持时间序，pin 提升到组首）
+  const groups = useMemo(
+    () =>
+      groupEntries(filtered).map((g) => ({
+        ...g,
+        items: [...g.items.filter((e) => e.pinned), ...g.items.filter((e) => !e.pinned)],
+      })),
+    [filtered],
+  )
 
   const handleClearAll = () => {
     if (!clearArmed) {
@@ -109,6 +166,19 @@ export function HistoryPanel(props: HistoryPanelProps) {
     window.clearTimeout(clearTimer.current)
     setClearArmed(false)
     onClearAll()
+  }
+
+  const handleCreateCollection = async () => {
+    const name = collectionName.trim()
+    if (!name || !onCreateCollection) return
+    setCollectionName('')
+    await onCreateCollection(name)
+  }
+
+  const submitRename = async (id: number) => {
+    const name = renameValue.trim()
+    setRenamingId(null)
+    if (name && onRenameCollection) await onRenameCollection(id, name)
   }
 
   if (!open) return null
@@ -136,6 +206,21 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </span>
       </button>
 
+      {onNewPrompt && (
+        <button
+          type="button"
+          className="btn history-new prompt"
+          aria-label="新建 Prompt"
+          onClick={onNewPrompt}
+        >
+          <IconPlus size={14} />
+          <span aria-hidden="true">新建 Prompt</span>
+          <span className="en" aria-hidden="true">
+            New prompt
+          </span>
+        </button>
+      )}
+
       {enabled ? (
         <>
           <div className="history-search-wrap">
@@ -150,6 +235,89 @@ export function HistoryPanel(props: HistoryPanelProps) {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
+
+          {onKindFilterChange && (
+            <div className="history-kind-chips" role="group" aria-label="类型筛选">
+              {KIND_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`chip ${kindFilter === f.id ? 'active' : ''}`}
+                  aria-pressed={kindFilter === f.id}
+                  onClick={() => onKindFilterChange(f.id)}
+                >
+                  <span>{f.label}</span>
+                  <span className="en" aria-hidden="true">
+                    {f.en}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {cloudMode && (
+            <div className="history-collections" aria-label="集合">
+              <button
+                type="button"
+                className={`chip small ${activeCollectionId === null ? 'active' : ''}`}
+                onClick={() => onSelectCollection?.(null)}
+              >
+                全部集合
+              </button>
+              {collections.map((c) => (
+                <span key={c.id} className={`collection-chip ${activeCollectionId === c.id ? 'active' : ''}`}>
+                  {renamingId === c.id ? (
+                    <input
+                      className="collection-rename"
+                      aria-label="重命名集合"
+                      value={renameValue}
+                      autoFocus
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => void submitRename(c.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void submitRename(c.id)
+                        if (e.key === 'Escape') setRenamingId(null)
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="collection-name"
+                      onClick={() => onSelectCollection?.(c.id)}
+                      onDoubleClick={() => {
+                        setRenamingId(c.id)
+                        setRenameValue(c.name)
+                      }}
+                      title="点击筛选；双击重命名"
+                    >
+                      {c.name}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="collection-manage"
+                    aria-label={`删除集合「${c.name}」`}
+                    onClick={() => void onDeleteCollection?.(c.id)}
+                  >
+                    <IconClose size={9} />
+                  </button>
+                </span>
+              ))}
+              <span className="collection-create">
+                <input
+                  type="text"
+                  className="collection-input"
+                  placeholder="新建集合"
+                  aria-label="新建集合名称"
+                  value={collectionName}
+                  onChange={(e) => setCollectionName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleCreateCollection()
+                  }}
+                />
+              </span>
+            </div>
+          )}
 
           {entries.length === 0 ? (
             <div className="history-empty">
@@ -190,9 +358,35 @@ export function HistoryPanel(props: HistoryPanelProps) {
                             {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
                             {entry.content.length} 字符
                           </span>
+                          {(entry.kind ?? 'command') === 'prompt' && (
+                            <span className="tag kind-prompt" aria-label="类型：Prompt">
+                              Prompt
+                            </span>
+                          )}
+                          {entry.pinned === true && (
+                            <span className="tag pinned" aria-label="已置顶">
+                              <IconPin size={9} />
+                            </span>
+                          )}
+                          {entry.localOnly === true && (
+                            <span className="tag local-only" aria-label="仅本地，不同步">
+                              <IconLock size={9} />
+                              仅本地
+                            </span>
+                          )}
                           {entry.id === activeId && <span className="tag accent">编辑中</span>}
                         </span>
                       </button>
+                      {onTogglePin && (
+                        <button
+                          type="button"
+                          className={`btn icon history-item-pin ${entry.pinned ? 'on' : ''}`}
+                          aria-label={entry.pinned ? `取消置顶「${entry.title}」` : `置顶「${entry.title}」`}
+                          onClick={() => onTogglePin(entry.id)}
+                        >
+                          <IconPin size={12} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn icon history-item-delete"
@@ -229,6 +423,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
           <span>自动保存</span>
         </label>
         <span className="spacer" />
+        {onExport && enabled && (
+          <button type="button" className="btn ghost" onClick={onExport} aria-label="导出全部为 JSON">
+            <IconDownload size={13} />
+            <span aria-hidden="true">导出 JSON</span>
+          </button>
+        )}
         {enabled && (
           <button
             type="button"
@@ -241,7 +441,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
         )}
       </footer>
 
-      <span className="history-note">仅保存在本浏览器 · 不上传</span>
+      {cloudMode ? (
+        <span className="history-note">已登录 · 同步到自托管服务器 · 敏感条目请开「仅本地」</span>
+      ) : (
+        <span className="history-note">仅保存在本浏览器 · 不上传</span>
+      )}
     </>
   )
 

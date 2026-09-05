@@ -232,3 +232,14 @@
     display: none;
   }
 }
+
+/* ---------- v2：账号入口 ---------- */
+
+.account-btn {
+  gap: 5px;
+  font-size: 12.5px;
+}
+
+.account-btn.active {
+  color: var(--accent-ink);
+}

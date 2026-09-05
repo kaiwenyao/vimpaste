@@ -328,3 +328,158 @@
   color: var(--muted-2);
   text-align: center;
 }
+
+/* ---------- v2：类型筛选 chips / 集合 / 置顶与仅本地标记 / 导出 ---------- */
+
+.history-kind-chips {
+  display: flex;
+  gap: 6px;
+  padding: 0 14px 4px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.chip .en {
+  font-size: 10px;
+  color: var(--muted-2);
+}
+
+.chip:hover {
+  background: var(--control-hover-bg);
+  color: var(--text);
+}
+
+.chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+}
+
+.chip.small {
+  padding: 2px 10px;
+  font-size: 11.5px;
+}
+
+.history-collections {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 14px 8px;
+}
+
+.collection-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.collection-chip.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.collection-name {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  padding: 3px 4px 3px 10px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.collection-chip.active .collection-name {
+  color: var(--accent-ink);
+}
+
+.collection-rename {
+  width: 90px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 2px 8px;
+}
+
+.collection-manage {
+  background: none;
+  border: none;
+  color: var(--muted-2);
+  padding: 3px 7px 3px 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.collection-manage:hover {
+  color: var(--danger);
+}
+
+.collection-create {
+  display: inline-flex;
+}
+
+.collection-input {
+  width: 96px;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 3px 10px;
+}
+
+.collection-input::placeholder {
+  color: var(--muted-2);
+}
+
+.btn.history-new.prompt {
+  margin-top: 6px;
+}
+
+.tag.kind-prompt {
+  background: var(--info-bg);
+  color: var(--info);
+  border: 1px solid rgba(159, 192, 232, 0.35);
+}
+
+.tag.pinned {
+  color: var(--accent-ink);
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+}
+
+.tag.local-only {
+  background: var(--warn-bg);
+  color: var(--warn);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.history-item-pin {
+  color: var(--muted-2);
+}
+
+.history-item-pin.on {
+  color: var(--accent);
+}

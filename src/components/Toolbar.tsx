@@ -11,6 +11,7 @@ import {
   IconHelp,
   IconHistory,
   IconSettings,
+  IconUser,
 } from './icons'
 
 export interface ToolbarProps {
@@ -18,6 +19,8 @@ export interface ToolbarProps {
   langAuto: boolean
   manualOverride: boolean
   onLanguageChange: (id: LangId) => void
+  /** prompt 类型：语言识别关闭，下拉只留 纯文本/Markdown（§8） */
+  promptMode?: boolean
   theme: ThemeId
   onThemeChange: (theme: ThemeId) => void
   onOpenSettings: () => void
@@ -33,6 +36,10 @@ export interface ToolbarProps {
   clearArmed: boolean
   onClear: () => void
   onHelp: () => void
+  /** 云构建（VITE_CLOUD_ENABLED）才有账号入口；匿名本地版不渲染 */
+  cloudEnabled?: boolean
+  accountLabel?: string | null
+  onOpenAccount?: () => void
 }
 
 /**
@@ -46,6 +53,7 @@ export function Toolbar(props: ToolbarProps) {
     langAuto,
     manualOverride,
     onLanguageChange,
+    promptMode,
     theme,
     onThemeChange,
     onOpenSettings,
@@ -60,6 +68,9 @@ export function Toolbar(props: ToolbarProps) {
     clearArmed,
     onClear,
     onHelp,
+    cloudEnabled,
+    accountLabel,
+    onOpenAccount,
   } = props
 
   const armedRef = useRef<HTMLButtonElement | null>(null)
@@ -103,7 +114,10 @@ export function Toolbar(props: ToolbarProps) {
           value={langId}
           onChange={(e) => onLanguageChange(e.target.value as LangId)}
         >
-          {LANGUAGES.map((l) => (
+          {(promptMode
+            ? LANGUAGES.filter((l) => l.id === 'plaintext' || l.id === 'markdown')
+            : LANGUAGES
+          ).map((l) => (
             <option key={l.id} value={l.id}>
               {l.label}
             </option>
@@ -166,6 +180,19 @@ export function Toolbar(props: ToolbarProps) {
       >
         <IconSettings size={17} />
       </button>
+
+      {cloudEnabled && (
+        <button
+          type="button"
+          className={`btn ghost account-btn ${accountLabel ? 'active' : ''}`}
+          aria-label="账号"
+          title={accountLabel ? `已登录：${accountLabel}` : '登录以同步片段库'}
+          onClick={onOpenAccount}
+        >
+          <IconUser size={15} />
+          <span aria-hidden="true">{accountLabel ?? '登录'}</span>
+        </button>
+      )}
 
       <select
         className="select"

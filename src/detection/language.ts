@@ -21,6 +21,7 @@ export type LangId =
   | 'sql'
   | 'dockerfile'
   | 'nginx'
+  | 'markdown'
   | 'plaintext'
 
 export interface LanguageInfo {
@@ -40,6 +41,7 @@ export const LANGUAGES: LanguageInfo[] = [
   { id: 'sql', label: 'SQL' },
   { id: 'dockerfile', label: 'Dockerfile' },
   { id: 'nginx', label: 'Nginx' },
+  { id: 'markdown', label: 'Markdown' },
   { id: 'plaintext', label: '纯文本' },
 ]
 

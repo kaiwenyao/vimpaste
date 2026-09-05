@@ -131,3 +131,69 @@ export function findPlaceholders(text: string): PlaceholderMatch[] {
   matches.sort((a, b) => a.start - b.start)
   return matches
 }
+
+// ---------------------------------------------------------------------------
+// Prompt 类型（plan-v2-accounts.md §8）：{{变量}}、[待填写]、【主题】。
+// command 的识别规则不变（上方 findPlaceholders）；prompt 用独立规则集，
+// 两套规则不会混用——kind 决定走哪一个。
+// ---------------------------------------------------------------------------
+
+/** Prompt 占位符种类：variable（{{变量}}）与 prose（[待填写] / 【主题】） */
+export type PromptPlaceholderKind = 'variable' | 'prose'
+
+export interface PromptPlaceholderMatch {
+  start: number
+  end: number
+  text: string
+  kind: PromptPlaceholderKind
+  /** 仅 variable 有值：{{内的变量名（trim 后）} */
+  name?: string
+}
+
+const PROMPT_VARIABLE_RE = /\{\{\s*([^{}]{1,64}?)\s*\}\}/g
+const PROMPT_PROSE_RE = /\[[^[\]\n]{1,32}填写[^[\]\n]{0,32}\]|【[^【】\n]{1,32}】/g
+
+/** 解析 prompt 模板中的 {{变量}} 名（按出现顺序去重）；用于变量填充表单 */
+export function parsePromptVariables(text: string): string[] {
+  const names: string[] = []
+  for (const m of text.matchAll(PROMPT_VARIABLE_RE)) {
+    const name = (m[1] ?? '').trim()
+    if (name && !names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+/** prompt 占位符识别：{{变量}} 优先，[待填写]/【主题】次之；重叠时先识别的保留 */
+export function findPromptPlaceholders(text: string): PromptPlaceholderMatch[] {
+  if (!text || text.length > MAX_SCAN_LENGTH) return []
+  const matches: PromptPlaceholderMatch[] = []
+  const overlaps = (start: number, end: number): boolean =>
+    matches.some((m) => start < m.end && m.start < end)
+  for (const m of text.matchAll(PROMPT_VARIABLE_RE)) {
+    const full = m[0]
+    matches.push({
+      start: m.index,
+      end: m.index + full.length,
+      text: full,
+      kind: 'variable',
+      name: (m[1] ?? '').trim(),
+    })
+  }
+  for (const m of text.matchAll(PROMPT_PROSE_RE)) {
+    const full = m[0]
+    if (!overlaps(m.index, m.index + full.length)) {
+      matches.push({ start: m.index, end: m.index + full.length, text: full, kind: 'prose' })
+    }
+  }
+  matches.sort((a, b) => a.start - b.start)
+  return matches
+}
+
+/** 用 values 里的值替换 {{变量}}；没有值的变量保持原样——绝不破坏模板 */
+export function fillPromptTemplate(text: string, values: Record<string, string>): string {
+  return text.replace(PROMPT_VARIABLE_RE, (full, rawName: string) => {
+    const name = rawName.trim()
+    const value = values[name]
+    return value === undefined || value === '' ? full : value
+  })
+}
