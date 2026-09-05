@@ -45,12 +45,20 @@ function renderSavedPage(overrides: Partial<Parameters<typeof SavedPage>[0]> = {
   return props
 }
 
+/** 冻结 Date（只冻结时钟、不动定时器）：相对时间文案随渲染时的墙钟漂移，
+ * 慢 CI 上模块加载到用例执行隔几秒，「30 秒前」就会变成「31/32 秒前」导致断言失败 */
+function freezeClock() {
+  vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+}
+
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
 })
 
 describe('SavedPage（已保存片段库）', () => {
   it('渲染标题、条数、条目元信息与隐私提示', () => {
+    freezeClock()
     renderSavedPage()
     expect(screen.getByRole('heading', { name: '已保存' })).toBeInTheDocument()
     expect(screen.getByText('1 条')).toBeInTheDocument()
@@ -61,6 +69,7 @@ describe('SavedPage（已保存片段库）', () => {
   })
 
   it('按时间分组（今天 / 昨天 / 7 天内 / 更早）', () => {
+    freezeClock()
     // 分组按自然日边界划分，时间戳须相对「今日零点」构造，
     // 否则 NOW-36h 之类的固定偏移在凌晨运行时会滑出「昨天」区间
     const startOfToday = new Date(NOW)
@@ -225,7 +234,10 @@ describe('SnippetDetailPage（条目详情）', () => {
   })
 
   it('创建/更新时间包含相对时间，标签逐一渲染', () => {
+    freezeClock()
     renderDetail()
+    // 创建与更新时间的 dd 内各有一个相对时间副标（冻结时钟后文案确定）
+    expect(screen.getByText('1 天前', { selector: '.detail-sub' })).toBeInTheDocument()
     expect(screen.getByText('30 秒前', { selector: '.detail-sub' })).toBeInTheDocument()
     expect(screen.getByText('k3s')).toBeInTheDocument()
     expect(screen.getByText('install')).toBeInTheDocument()
