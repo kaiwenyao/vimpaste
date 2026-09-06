@@ -50,7 +50,7 @@ export interface ToolbarProps {
 /**
  * 工具栏按「身份 → 内容属性 → 待办 → 动作」排序（设计稿 1a）：
  * 品牌、片段库、语言在左，中间是待替换计数与前后跳转，右侧只留帮助/设置/主题/清空/保存/复制。
- * 英文副标与快捷键提示都是 aria-hidden 的装饰，可访问名称仍是稳定的中文标签。
+ * 快捷键与英文说明只进 title 与帮助面板，不占工具栏宽度——保证桌面端单行放得下。
  */
 export function Toolbar(props: ToolbarProps) {
   const {
@@ -106,9 +106,8 @@ export function Toolbar(props: ToolbarProps) {
         title="查看手动保存的片段库"
         onClick={onOpenSaved}
       >
-        <span aria-hidden="true">已保存{typeof savedCount === 'number' ? ` · ${savedCount}` : ''}</span>
-        <span className="en" aria-hidden="true">
-          Saved
+        <span aria-hidden="true">
+          已保存{typeof savedCount === 'number' ? ` · ${savedCount}` : ''}
         </span>
       </button>
 
@@ -141,9 +140,6 @@ export function Toolbar(props: ToolbarProps) {
         )}
         <span className="ph-count" title="待替换占位符数量">
           {placeholderCount} 个待替换
-        </span>
-        <span className="en" aria-hidden="true">
-          {allReplaced ? 'All replaced' : 'To replace'}
         </span>
         <button
           type="button"
@@ -218,13 +214,9 @@ export function Toolbar(props: ToolbarProps) {
         className={`btn ${clearArmed ? 'danger' : 'ghost'}`}
         onClick={onClear}
         aria-label={clearArmed ? '确认清空全部内容' : '清空编辑器'}
+        title={clearArmed ? '再点一次确认清空' : '清空编辑器'}
       >
         <span aria-hidden="true">{clearArmed ? '确认清空？' : '清空'}</span>
-        {!clearArmed && (
-          <span className="en" aria-hidden="true">
-            Clear
-          </span>
-        )}
       </button>
 
       <button
@@ -237,14 +229,6 @@ export function Toolbar(props: ToolbarProps) {
       >
         {saveState === 'saved' ? <IconCheck size={15} /> : <IconSave size={15} />}
         <span aria-hidden="true">{saveState === 'saved' ? '已保存' : '保存'}</span>
-        <span className="en" aria-hidden="true">
-          {saveState === 'saved' ? 'Saved' : 'Save'}
-        </span>
-        {saveState === 'dirty' && (
-          <span className="kbd" aria-hidden="true">
-            ⌘S
-          </span>
-        )}
       </button>
 
       <button
@@ -257,14 +241,6 @@ export function Toolbar(props: ToolbarProps) {
       >
         {copied ? <IconCheck size={16} /> : <IconCopy />}
         <span aria-hidden="true">{copied ? '已复制' : '复制'}</span>
-        <span className="en" aria-hidden="true">
-          {copied ? 'Copied' : 'Copy'}
-        </span>
-        {!copied && (
-          <span className="kbd" aria-hidden="true">
-            ⌘↵
-          </span>
-        )}
       </button>
     </header>
   )

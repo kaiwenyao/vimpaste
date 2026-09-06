@@ -93,13 +93,13 @@ input:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   border: 1px solid transparent;
   background: var(--bg-control);
   color: var(--text);
   border-radius: var(--radius-pill);
-  padding: 8px 15px;
-  font-size: 13.5px;
+  padding: 7px 13px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
@@ -140,8 +140,8 @@ input:focus-visible,
 }
 
 .btn.icon {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border-radius: var(--radius-pill);
 }
@@ -236,13 +236,13 @@ kbd,
   background: var(--bg-control);
   background-image: var(--select-arrow);
   background-repeat: no-repeat;
-  background-position: right 12px center;
+  background-position: right 11px center;
   color: var(--text);
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  padding: 7px 32px 7px 14px;
+  padding: 6px 30px 6px 13px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition:

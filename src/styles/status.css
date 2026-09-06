@@ -6,10 +6,11 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
-  padding: 9px 20px;
-  font-size: 12.5px;
+  padding: 8px 18px;
+  font-size: 12px;
   color: var(--muted);
   background: var(--bg-toolbar);
+  border-top: 1px solid var(--border);
   font-family: var(--font-mono);
 }
 
