@@ -534,6 +534,33 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     expect(list[0].note).toBeUndefined()
   })
 
+  it('内容与最近一条相同但填了草稿标题/备注：创建新条目而不覆盖旧条目', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await user.click(screen.getByRole('button', { name: '清空编辑器' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
+    // 粘贴与最近一条完全相同的内容：UI 承诺这是「新片段」
+    setDoc(K3S)
+    await screen.findByRole('textbox', { name: '新片段标题' })
+    await user.type(screen.getByRole('textbox', { name: '新片段标题' }), '同名内容的另一份')
+    await user.type(screen.getByRole('textbox', { name: '新片段备注' }), '给新片段的备注')
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      title: string
+      note?: string
+      content: string
+    }[]
+    expect(list).toHaveLength(2)
+    // 草稿元信息落在新条目上；旧条目的标题/备注原样保留
+    expect(list.some((e) => e.title === '同名内容的另一份' && e.note === '给新片段的备注')).toBe(
+      true,
+    )
+    expect(list.some((e) => e.title.startsWith('curl -sfL') && e.note === undefined)).toBe(true)
+  })
+
   it('标题留空提交时恢复自动标题（取内容首行）', async () => {
     const user = userEvent.setup()
     render(<App />)

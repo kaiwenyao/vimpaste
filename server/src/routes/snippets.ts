@@ -171,7 +171,8 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
           kind: sanitized.kind,
           title: sanitized.title,
           content: sanitized.content,
-          note: sanitized.note,
+          // 创建行时省略视为无备注；更新路径由 dataFromPayload 区分省略与显式 null
+          note: sanitized.note ?? null,
           langId: sanitized.langId,
           pinned: sanitized.pinned,
           usageCount: sanitized.usageCount,
@@ -322,7 +323,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               kind: change.kind,
               title: change.title,
               content: change.content,
-              note: change.note,
+              note: change.note ?? null,
               langId: change.langId,
               pinned: change.pinned,
               usageCount: change.usageCount,
@@ -347,7 +348,8 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               kind: change.kind,
               title: change.title,
               content: change.content,
-              note: change.note,
+              // 旧版客户端不送 note 时不得覆盖服务端已有备注：省略 ≠ 显式 null
+              ...(change.note !== undefined ? { note: change.note } : {}),
               langId: change.langId,
               pinned: change.pinned,
               usageCount: change.usageCount,
@@ -415,7 +417,7 @@ function dataFromPayload(s: {
   kind: 'command' | 'prompt'
   title: string
   content: string
-  note: string | null
+  note?: string | null
   langId: string
   pinned: boolean
   usageCount: number
@@ -427,7 +429,8 @@ function dataFromPayload(s: {
     kind: s.kind,
     title: s.title,
     content: s.content,
-    note: s.note,
+    // 旧版客户端不送 note 时不得覆盖服务端已有备注：省略 ≠ 显式 null
+    ...(s.note !== undefined ? { note: s.note } : {}),
     langId: s.langId,
     pinned: s.pinned,
     usageCount: s.usageCount,

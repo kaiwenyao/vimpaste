@@ -368,11 +368,15 @@ export default function App() {
           ? 'markdown'
           : 'plaintext'
         : langIdRef.current
-    const target =
-      (prevId ? current.find((e) => e.id === prevId) : undefined) ??
-      (current[0] && current[0].content === text ? current[0] : undefined)
     const draftTitle = newTitleRef.current.trim().slice(0, SNIPPET_TITLE_MAX_CHARS)
     const draftNote = newNoteRef.current.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
+    // 「新片段」栏里填了标题/备注 = 用户在给一条新片段起名：此时即使内容与最近一条
+    // 已保存条目完全相同，也不走「复用最近一条」的去重回退——否则草稿元信息会覆盖
+    // 旧条目的标题/备注，与 UI 承诺的新片段相悖（草稿为空时去重行为不变）。
+    const hasDraftMeta = draftTitle !== '' || draftNote !== ''
+    const target =
+      (prevId ? current.find((e) => e.id === prevId) : undefined) ??
+      (!hasDraftMeta && current[0] && current[0].content === text ? current[0] : undefined)
     // 自定义标题的不变量：从未改过标题的条目恒有 title === deriveTitle(content)。
     // 据此保存内容时保留用户起的名字，只让自动标题跟随新内容；新片段栏的草稿标题优先。
     const title =

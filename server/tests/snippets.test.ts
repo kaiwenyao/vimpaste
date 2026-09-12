@@ -205,6 +205,29 @@ describe.skipIf(!dbUp)('Snippet API', () => {
     expect(miss.json().data).toHaveLength(0)
   })
 
+  it('旧版客户端省略 note 的更新不清空已有备注（省略 ≠ 显式 null）', async () => {
+    await createAs(alice.cookie, { note: '要保留的备注' })
+
+    // 旧版客户端的 upsert（POST 同 id、updatedAt 更新、不带 note 字段）
+    const upsert = await createAs(alice.cookie, {
+      title: '旧版客户端的修改',
+      updatedAt: Date.now() + 5000,
+    })
+    expect(upsert.statusCode).toBe(200)
+    expect(upsert.json().data.note).toBe('要保留的备注')
+
+    // sync 上行同样省略 note：备注保留
+    const synced = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/snippets/sync',
+      headers: { cookie: alice.cookie },
+      payload: { since: 0, changes: [snippetPayload({ updatedAt: Date.now() + 6000 })] },
+    })
+    expect(synced.json().data.applied).toEqual([uuid(1)])
+    const row = await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(1) } })
+    expect(row.note).toBe('要保留的备注')
+  })
+
   it('搜索 q 命中标题与内容（大小写不敏感），kind 过滤生效', async () => {
     await createAs(alice.cookie)
     await createAs(alice.cookie, {

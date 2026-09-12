@@ -32,7 +32,8 @@ export function makeSnippetPayloadSchema(maxContentChars: number) {
     kind: z.enum(SNIPPET_KINDS),
     title: z.string().min(1).max(200),
     content: z.string().min(1).max(maxContentChars),
-    note: noteSchema.nullable().default(null),
+    /** 省略 ≠ null：旧版客户端不带此字段时更新不得清空已有备注；null 才是显式删除 */
+    note: noteSchema.nullable().optional(),
     langId: langIdSchema,
     pinned: z.boolean().default(false),
     usageCount: z.number().int().min(0).max(10_000_000).default(0),
