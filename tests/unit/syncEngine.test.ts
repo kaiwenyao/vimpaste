@@ -22,9 +22,10 @@ vi.mock('../../src/cloud/api', () => {
   }
 })
 
-import { SyncEngine, loadQueue, saveQueue } from '../../src/cloud/sync'
+import { SyncEngine, loadQueue, saveQueue, serverToLocal, localToApi } from '../../src/cloud/sync'
 import type { SyncQueue } from '../../src/cloud/sync'
 import { CloudApiError } from '../../src/cloud/api'
+import type { ApiSnippet } from '../../src/cloud/api'
 import { LocalSnippetStore } from '../../src/storage/SnippetStore'
 import { cloudCacheStorage } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
@@ -46,11 +47,12 @@ function snippet(overrides: Partial<Snippet> = {}): Snippet {
   }
 }
 
-const apiSnippet = (overrides: Record<string, unknown> = {}) => ({
+const apiSnippet = (overrides: Partial<ApiSnippet> = {}): ApiSnippet => ({
   id: '11111111-1111-4111-8111-111111111111',
   kind: 'command',
   title: 't',
   content: 'c',
+  note: null as string | null,
   langId: 'plaintext',
   pinned: false,
   usageCount: 0,
@@ -84,6 +86,20 @@ describe('同步队列持久化', () => {
     }
     saveQueue(QUEUE_KEY, queue)
     expect(loadQueue(QUEUE_KEY)).toEqual(queue)
+  })
+})
+
+describe('本地 ↔ 服务端条目映射（note 往返）', () => {
+  it('localToApi 带上备注；无备注时为 null', () => {
+    expect(localToApi(snippet({ note: '重装 k3s 用' })).note).toBe('重装 k3s 用')
+    expect(localToApi(snippet())).toHaveProperty('note', null)
+  })
+
+  it('serverToLocal 保留服务端备注；空串视为无备注（键省略）', () => {
+    const withNote = serverToLocal(apiSnippet({ note: '生产环境的入口命令' }))
+    expect(withNote.note).toBe('生产环境的入口命令')
+    const withoutNote = serverToLocal(apiSnippet({ note: '' }))
+    expect(withoutNote).not.toHaveProperty('note')
   })
 })
 
@@ -137,9 +153,7 @@ describe('SyncEngine（冲突副本 / 墓碑 / 仅本地 / 防抖推送）', () 
     const { engine, statuses } = makeEngine()
     // 典型场景：离线新建 → 2 秒防抖内删除 → 服务端从未收到创建，DELETE 返回 404
     engine.enqueueDelete('44444444-4444-4444-8444-444444444444')
-    deleteSnippetMock.mockRejectedValue(
-      new CloudApiError(404, 'NOT_FOUND', '条目不存在'),
-    )
+    deleteSnippetMock.mockRejectedValue(new CloudApiError(404, 'NOT_FOUND', '条目不存在'))
     syncMock.mockResolvedValue({ applied: [], conflicts: [], pulled: [], now: Date.now() })
     await engine.flush()
     expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
@@ -149,9 +163,7 @@ describe('SyncEngine（冲突副本 / 墓碑 / 仅本地 / 防抖推送）', () 
   it('删除的其它失败仍进入 paused 等重试', async () => {
     const { engine, statuses } = makeEngine()
     engine.enqueueDelete('44444444-4444-4444-8444-444444444444')
-    deleteSnippetMock.mockRejectedValue(
-      new CloudApiError(0, 'NETWORK', '网络不可用'),
-    )
+    deleteSnippetMock.mockRejectedValue(new CloudApiError(0, 'NETWORK', '网络不可用'))
     await engine.flush()
     expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(1)
     expect(statuses.at(-1)?.state).toBe('paused')
@@ -168,7 +180,12 @@ describe('SyncEngine（冲突副本 / 墓碑 / 仅本地 / 防抖推送）', () 
     syncMock.mockImplementation(async () => {
       calls += 1
       if (calls === 1) return { applied: [], conflicts: [], pulled: [], now: Date.now() }
-      const newer = snippet({ id, content: '在途新编辑', updatedAt: Date.now(), syncState: 'pending' })
+      const newer = snippet({
+        id,
+        content: '在途新编辑',
+        updatedAt: Date.now(),
+        syncState: 'pending',
+      })
       store.upsert(newer)
       engine.enqueueUpsert(newer)
       return { applied: [id], conflicts: [], pulled: [], now: Date.now() }

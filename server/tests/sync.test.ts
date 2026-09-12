@@ -37,15 +37,29 @@ describe.skipIf(!dbUp)('POST /api/snippets/sync', () => {
   it('首次同步（since=0）：上行创建 + 下行回显', async () => {
     const res = await sync(alice.cookie, {
       since: 0,
-      changes: [snippetPayload()],
+      changes: [snippetPayload({ note: 'master 节点的安装脚本' })],
     })
     expect(res.statusCode).toBe(200)
     const body = res.json().data
     expect(body.applied).toEqual([uuid(1)])
     expect(body.conflicts).toEqual([])
     expect(body.pulled).toHaveLength(1)
-    expect(body.pulled[0]).toMatchObject({ id: uuid(1), kind: 'command' })
+    expect(body.pulled[0]).toMatchObject({
+      id: uuid(1),
+      kind: 'command',
+      note: 'master 节点的安装脚本',
+    })
     expect(typeof body.now).toBe('number')
+  })
+
+  it('备注 note 随上行更新覆盖服务端并回传其它设备', async () => {
+    await sync(alice.cookie, { since: 0, changes: [snippetPayload()] })
+    const res = await sync(alice.cookie, {
+      since: 0,
+      changes: [snippetPayload({ note: '更新后的备注', updatedAt: Date.now() + 1000 })],
+    })
+    expect(res.json().data.applied).toEqual([uuid(1)])
+    expect(res.json().data.pulled[0].note).toBe('更新后的备注')
   })
 
   it('下行按 since 增量：只返回服务端写入时间晚于基线的条目', async () => {

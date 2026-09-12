@@ -445,6 +445,110 @@ describe('手动保存（唯一的入库入口）', () => {
   })
 })
 
+describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => {
+  it('编辑器里输入内容后出现「新片段」栏；保存后变为「编辑中」栏', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    // 空编辑器：两栏都不显示
+    expect(screen.queryByText('新片段')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '片段标题' })).not.toBeInTheDocument()
+
+    setDoc(K3S)
+    expect(await screen.findByText('新片段')).toBeInTheDocument()
+    expect(screen.getByText('尚未保存 · 保存后进入片段库')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '新片段标题' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    expect(screen.getByText('编辑中')).toBeInTheDocument()
+    expect(screen.queryByText('新片段')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
+
+    // 真实粘贴新内容：与条目解除关联，回到「新片段」
+    const cmContent = document.querySelector('.cm-content')
+    fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
+    setDoc('kubectl get nodes -o wide')
+    expect(await screen.findByText('新片段')).toBeInTheDocument()
+    expect(screen.queryByText('编辑中')).not.toBeInTheDocument()
+  })
+
+  it('新片段的标题/备注草稿随保存入库；保存后草稿清空', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    const titleInput = await screen.findByRole('textbox', { name: '新片段标题' })
+    const noteInput = screen.getByRole('textbox', { name: '新片段备注' })
+    await user.type(titleInput, '重装 k3s')
+    await user.type(noteInput, 'master 节点的安装脚本')
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      title: string
+      note?: string
+    }[]
+    expect(list).toHaveLength(1)
+    expect(list[0].title).toBe('重装 k3s')
+    expect(list[0].note).toBe('master 节点的安装脚本')
+
+    // 保存后进入编辑态：标题/备注输入框显示已入库的值（而不是残留草稿态）
+    expect(screen.getByRole('textbox', { name: '片段标题' })).toHaveValue('重装 k3s')
+    expect(screen.getByRole('textbox', { name: '片段备注' })).toHaveValue('master 节点的安装脚本')
+  })
+
+  it('编辑已有片段：标题失焦即入库，保存修改内容后自定义标题不被覆盖', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+
+    const titleInput = screen.getByRole('textbox', { name: '片段标题' })
+    expect(titleInput).toHaveValue("curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_T…")
+    await user.clear(titleInput)
+    await user.type(titleInput, '重装 k3s 脚本')
+    await user.tab() // 失焦提交
+    let list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
+    expect(list[0].title).toBe('重装 k3s 脚本')
+
+    // 修改内容再保存：自定义标题保留，备注同理
+    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
+    expect(list).toHaveLength(1)
+    expect(list[0].title).toBe('重装 k3s 脚本')
+  })
+
+  it('编辑已有片段：备注失焦即入库，清空备注即删除', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+
+    const noteInput = screen.getByRole('textbox', { name: '片段备注' })
+    await user.type(noteInput, '测试集群专用')
+    await user.tab()
+    let list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { note?: string }[]
+    expect(list[0].note).toBe('测试集群专用')
+
+    await user.clear(noteInput)
+    await user.tab()
+    list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { note?: string }[]
+    expect(list[0].note).toBeUndefined()
+  })
+
+  it('标题留空提交时恢复自动标题（取内容首行）', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    const titleInput = screen.getByRole('textbox', { name: '片段标题' })
+    // 先起一个自定义标题，再清空提交：应回到自动标题而不是留空
+    await user.type(titleInput, '我的脚本')
+    await user.tab()
+    await user.clear(titleInput)
+    await user.tab()
+    expect(titleInput).toHaveValue("curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_T…")
+  })
+})
+
 describe('「已保存」片段库页面与详情页', () => {
   it('保存 → 打开片段库 → 点条目进详情 → 详情展示完整元信息与全文', async () => {
     const user = userEvent.setup()

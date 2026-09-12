@@ -21,12 +21,18 @@ export const tagSchema = z
   // 控制字符用码点判断（避免 no-control-regex 的字面控制字符正则）
   .refine((v) => ![...v].some((ch) => ch.charCodeAt(0) < 0x20), 'tag 不能含控制字符')
 
+/** 备注上限（与前端 SNIPPET_NOTE_MAX_CHARS 对齐） */
+export const SNIPPET_NOTE_MAX = 2000
+
+const noteSchema = z.string().max(SNIPPET_NOTE_MAX)
+
 export function makeSnippetPayloadSchema(maxContentChars: number) {
   return z.object({
     id: z.string().uuid(),
     kind: z.enum(SNIPPET_KINDS),
     title: z.string().min(1).max(200),
     content: z.string().min(1).max(maxContentChars),
+    note: noteSchema.nullable().default(null),
     langId: langIdSchema,
     pinned: z.boolean().default(false),
     usageCount: z.number().int().min(0).max(10_000_000).default(0),
@@ -47,6 +53,7 @@ export function makeSnippetPatchSchema(maxContentChars: number) {
   return z.object({
     title: z.string().min(1).max(200).optional(),
     content: z.string().min(1).max(maxContentChars).optional(),
+    note: noteSchema.nullable().optional(),
     langId: langIdSchema.optional(),
     kind: z.enum(SNIPPET_KINDS).optional(),
     pinned: z.boolean().optional(),

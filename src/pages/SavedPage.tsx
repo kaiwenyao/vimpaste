@@ -125,7 +125,10 @@ export function SavedPage(props: SavedPageProps) {
     if (kindFilter !== 'all') list = list.filter((e) => (e.kind ?? 'command') === kindFilter)
     if (!q) return list
     return list.filter(
-      (e) => e.title.toLowerCase().includes(q) || e.content.toLowerCase().includes(q),
+      (e) =>
+        e.title.toLowerCase().includes(q) ||
+        e.content.toLowerCase().includes(q) ||
+        (e.note ?? '').toLowerCase().includes(q),
     )
   }, [entries, query, kindFilter])
 
@@ -176,7 +179,12 @@ export function SavedPage(props: SavedPageProps) {
         <h1 className="page-title">已保存</h1>
         <span className="page-count">{entries.length} 条</span>
         <span className="spacer" />
-        <button type="button" className="btn history-new" aria-label="新建粘贴" onClick={onNewPaste}>
+        <button
+          type="button"
+          className="btn history-new"
+          aria-label="新建粘贴"
+          onClick={onNewPaste}
+        >
           <IconPlus size={14} />
           <span aria-hidden="true">新建粘贴</span>
           <span className="en" aria-hidden="true">
@@ -317,7 +325,10 @@ export function SavedPage(props: SavedPageProps) {
                 <span className="en">{GROUP_EN[group.label]}</span>
               </li>
               {group.items.map((entry) => (
-                <li key={entry.id} className={`history-row ${entry.id === activeId ? 'active' : ''}`}>
+                <li
+                  key={entry.id}
+                  className={`history-row ${entry.id === activeId ? 'active' : ''}`}
+                >
                   <button
                     type="button"
                     className="history-item"
@@ -325,6 +336,7 @@ export function SavedPage(props: SavedPageProps) {
                     onClick={() => onOpenDetail(entry.id)}
                   >
                     <span className="history-item-title">{entry.title}</span>
+                    {entry.note && <span className="history-item-note">{entry.note}</span>}
                     <span className="history-item-meta-row">
                       <span className="history-item-meta">
                         {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
@@ -361,7 +373,9 @@ export function SavedPage(props: SavedPageProps) {
                   <button
                     type="button"
                     className={`btn icon history-item-pin ${entry.pinned ? 'on' : ''}`}
-                    aria-label={entry.pinned ? `取消置顶「${entry.title}」` : `置顶「${entry.title}」`}
+                    aria-label={
+                      entry.pinned ? `取消置顶「${entry.title}」` : `置顶「${entry.title}」`
+                    }
                     onClick={() => onTogglePin(entry.id)}
                   >
                     <IconPin size={12} />

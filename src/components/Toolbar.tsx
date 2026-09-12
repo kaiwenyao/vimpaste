@@ -30,6 +30,8 @@ export interface ToolbarProps {
   savedCount?: number
   /** 手动保存三态：empty=无可保存内容；dirty=有未保存修改；saved=当前内容已入库 */
   saveState: 'empty' | 'dirty' | 'saved'
+  /** 保存去向：new=编辑器里是新片段；existing=正在续写已有片段（进保存按钮的说明） */
+  saveTarget?: 'new' | 'existing'
   onSave: () => void
   placeholderCount: number
   onPrevPlaceholder: () => void
@@ -65,6 +67,7 @@ export function Toolbar(props: ToolbarProps) {
     onOpenSaved,
     savedCount,
     saveState,
+    saveTarget,
     onSave,
     placeholderCount,
     onPrevPlaceholder,
@@ -225,7 +228,11 @@ export function Toolbar(props: ToolbarProps) {
         disabled={saveState !== 'dirty'}
         onClick={onSave}
         aria-label="保存到片段库"
-        title="保存到片段库（Ctrl/Cmd+S）"
+        title={
+          saveTarget === 'existing'
+            ? '保存修改到当前片段（Ctrl/Cmd+S）'
+            : '保存为新片段（Ctrl/Cmd+S）'
+        }
       >
         {saveState === 'saved' ? <IconCheck size={15} /> : <IconSave size={15} />}
         <span aria-hidden="true">{saveState === 'saved' ? '已保存' : '保存'}</span>

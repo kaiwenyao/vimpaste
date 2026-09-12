@@ -69,6 +69,20 @@ describe('sanitizeSnippet（白名单清洗）', () => {
     expect(s?.tags).toHaveLength(20)
     expect(s?.tags?.[0]).toBe('a')
   })
+
+  it('备注：去空白后入库，空白视为无备注（键省略），超长截断', () => {
+    const s = sanitizeSnippet({ id: 'a', content: 'x', note: '  重装 k3s 用  ' })
+    expect(s?.note).toBe('重装 k3s 用')
+    expect(sanitizeSnippet({ id: 'a', content: 'x', note: '   ' })).not.toHaveProperty('note')
+    expect(sanitizeSnippet({ id: 'a', content: 'x', note: 42 })).not.toHaveProperty('note')
+    const long = sanitizeSnippet({ id: 'a', content: 'x', note: 'n'.repeat(3000) })
+    expect(long?.note).toHaveLength(2000)
+  })
+
+  it('标题截断到 200 字符上限（与服务端 schema 对齐）', () => {
+    const s = sanitizeSnippet({ id: 'a', content: 'x', title: 't'.repeat(300) })
+    expect(s?.title).toHaveLength(200)
+  })
 })
 
 describe('本地存储（匿名路径沿用 vimpaste.history.v1）', () => {
@@ -109,7 +123,14 @@ describe('本地存储（匿名路径沿用 vimpaste.history.v1）', () => {
 describe('migrateV1ToV2（登录迁移，按用户分键，v1 键保留回滚窗口）', () => {
   it('v1 存在且该用户的 v2 不存在：读 v1 → 补字段 → 写 v2；v1 键原样保留', () => {
     const v1 = [
-      { id: 'old-1', title: '旧命令', content: 'echo old', langId: 'shell', createdAt: 1, updatedAt: 2 },
+      {
+        id: 'old-1',
+        title: '旧命令',
+        content: 'echo old',
+        langId: 'shell',
+        createdAt: 1,
+        updatedAt: 2,
+      },
     ]
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(v1))
 
@@ -120,7 +141,9 @@ describe('migrateV1ToV2（登录迁移，按用户分键，v1 键保留回滚窗
     expect(JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]')[0].id).toBe('old-1')
     expect(localStorage.getItem(CLOUD_CACHE_STORAGE_KEY)).toContain('old-1')
     // 键按用户隔离：别的用户的 v2 键不受影响
-    expect(cloudCacheStorage(TEST_USER_ID + 1).key).toBe(`${CLOUD_CACHE_STORAGE_PREFIX}.${TEST_USER_ID + 1}`)
+    expect(cloudCacheStorage(TEST_USER_ID + 1).key).toBe(
+      `${CLOUD_CACHE_STORAGE_PREFIX}.${TEST_USER_ID + 1}`,
+    )
   })
 
   it('v2 已存在时不覆盖（幂等）；v1 缺失时直接读 v2', () => {

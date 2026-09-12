@@ -9,6 +9,7 @@ export interface ApiSnippet {
   kind: 'command' | 'prompt'
   title: string
   content: string
+  note: string | null
   langId: string
   pinned: boolean
   usageCount: number
@@ -45,6 +46,7 @@ export function serializeSnippet(row: Snippet & { tags: Tag[] }): ApiSnippet {
     kind: row.kind,
     title: row.title,
     content: row.content,
+    note: row.note,
     langId: row.langId,
     pinned: row.pinned,
     usageCount: row.usageCount,

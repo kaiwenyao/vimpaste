@@ -76,6 +76,7 @@ export function serverToLocal(api: ApiSnippet): Snippet {
     id: api.id,
     title: api.title,
     content: api.content,
+    ...(api.note ? { note: api.note } : {}),
     langId: isLangId(api.langId) ? api.langId : 'plaintext',
     kind: api.kind === 'prompt' ? 'prompt' : 'command',
     pinned: api.pinned,
@@ -96,6 +97,7 @@ export function localToApi(s: Snippet): ApiSnippet {
     kind: s.kind === 'prompt' ? 'prompt' : 'command',
     title: s.title,
     content: s.content,
+    note: s.note ?? null,
     langId: s.langId,
     pinned: s.pinned === true,
     usageCount: 0,
@@ -376,7 +378,11 @@ export class SyncEngine {
     saveQueue(this.opts.queueKey, this.queue)
   }
 
-  private mergePulled(pulled: ApiSnippet[], pendingIds: Set<string>, deletedNow: string[] = []): void {
+  private mergePulled(
+    pulled: ApiSnippet[],
+    pendingIds: Set<string>,
+    deletedNow: string[] = [],
+  ): void {
     const applyingRemote = this.applyingRemote
     this.applyingRemote = true
     try {

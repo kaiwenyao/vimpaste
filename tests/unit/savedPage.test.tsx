@@ -19,6 +19,7 @@ function snippet(overrides: Partial<Snippet> = {}): Snippet {
     kind: overrides.kind ?? 'command',
     pinned: overrides.pinned,
     localOnly: overrides.localOnly,
+    note: overrides.note,
     tags: overrides.tags,
     syncState: overrides.syncState ?? 'local',
   }
@@ -129,6 +130,20 @@ describe('SavedPage（已保存片段库）', () => {
     expect(screen.getByText(/没有匹配「docker-compose」的片段/)).toBeInTheDocument()
   })
 
+  it('备注显示在条目行标题下方，且搜索能按备注命中', async () => {
+    const user = userEvent.setup()
+    renderSavedPage({
+      entries: [snippet({ id: 'a', title: 'kubectl 命令', note: '查看集群节点列表' })],
+    })
+    expect(screen.getByText('查看集群节点列表')).toBeInTheDocument()
+    const search = screen.getByRole('textbox', { name: '搜索已保存片段' })
+    await user.type(search, '集群节点')
+    expect(screen.getByRole('button', { name: /^kubectl 命令/ })).toBeInTheDocument()
+    await user.clear(search)
+    await user.type(search, '备注里没有的词')
+    expect(screen.getByText(/没有匹配「备注里没有的词」的片段/)).toBeInTheDocument()
+  })
+
   it('类型筛选 chips 点击回调携带筛选 id', async () => {
     const user = userEvent.setup()
     const props = renderSavedPage()
@@ -229,7 +244,9 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(screen.getByText('命令')).toBeInTheDocument()
     expect(screen.getByText('Shell / Bash')).toBeInTheDocument()
     expect(screen.getByText(String(CONTENT.length), { selector: 'dd' })).toBeInTheDocument()
-    expect(screen.getByText(String(CONTENT.split('\n').length), { selector: 'dd' })).toBeInTheDocument()
+    expect(
+      screen.getByText(String(CONTENT.split('\n').length), { selector: 'dd' }),
+    ).toBeInTheDocument()
     expect(screen.getByText('仅保存在本机')).toBeInTheDocument()
   })
 
@@ -241,7 +258,19 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(screen.getByText('30 秒前', { selector: '.detail-sub' })).toBeInTheDocument()
     expect(screen.getByText('k3s')).toBeInTheDocument()
     expect(screen.getByText('install')).toBeInTheDocument()
-    expect(screen.getByText('无', { selector: 'dd' })).toBeInTheDocument() // 集合
+    // 集合与备注都无值时各自显示「无」（按行定位，避免多行「无」互相误配）
+    const ddOfRow = (label: string) => {
+      const row = screen.getByText(label, { selector: 'dt' }).closest('.detail-row')
+      return row?.querySelector('dd')?.textContent
+    }
+    expect(ddOfRow('集合')).toBe('无')
+    expect(ddOfRow('备注')).toBe('无')
+  })
+
+  it('备注展示在详情页信息行里', () => {
+    renderDetail({ entry: snippet({ note: '重装 k3s 用的安装脚本' }) })
+    const row = screen.getByText('备注', { selector: 'dt' }).closest('.detail-row')
+    expect(row?.querySelector('dd')?.textContent).toBe('重装 k3s 用的安装脚本')
   })
 
   it('全文渲染在 <pre> 中且逐字保留', () => {

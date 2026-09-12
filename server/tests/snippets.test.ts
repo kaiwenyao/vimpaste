@@ -172,6 +172,39 @@ describe.skipIf(!dbUp)('Snippet API', () => {
     expect(rowA.ownerId).toBe(alice.id)
   })
 
+  it('备注 note：创建入库、PATCH 可清空（null）、可按 q 搜索命中', async () => {
+    const created = await createAs(alice.cookie, { note: '重装 k3s 的安装脚本' })
+    expect(created.statusCode).toBe(201)
+    expect(created.json().data.note).toBe('重装 k3s 的安装脚本')
+
+    // 按备注搜索命中（GET / 的 q 同时扫 title/content/note）
+    const hit = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/snippets?q=安装脚本',
+      headers: { cookie: alice.cookie },
+    })
+    expect(hit.json().data).toHaveLength(1)
+    expect(hit.json().data[0].id).toBe(uuid(1))
+
+    // PATCH 清空备注
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/snippets/${uuid(1)}`,
+      headers: { cookie: alice.cookie },
+      payload: { note: null, updatedAt: Date.now() + 5000 },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().data.note).toBeNull()
+
+    // 清空后按备注搜索不再命中
+    const miss = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/snippets?q=安装脚本',
+      headers: { cookie: alice.cookie },
+    })
+    expect(miss.json().data).toHaveLength(0)
+  })
+
   it('搜索 q 命中标题与内容（大小写不敏感），kind 过滤生效', async () => {
     await createAs(alice.cookie)
     await createAs(alice.cookie, {
