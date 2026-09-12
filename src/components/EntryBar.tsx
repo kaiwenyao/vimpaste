@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { Snippet } from '../storage/snippets'
+import { SNIPPET_NOTE_MAX_CHARS, SNIPPET_TITLE_MAX_CHARS } from '../storage/snippets'
 import type { ApiCollection } from '../cloud/api'
 import { IconCheck, IconCopy, IconLock, IconPin } from './icons'
 
 /**
  * 条目元信息条（plan-v2-accounts.md §5/§7.4/§8）：
- * 当前编辑条目的置顶、仅本地开关、标签与集合编辑。
+ * 当前编辑条目的 标题/备注、置顶、仅本地开关、标签与集合编辑。
+ * 开头的「编辑中」徽标向用户明示：编辑器里是已有片段，不是新片段。
  * 「仅本地」做在显眼位置——用户会往里存真实密钥（§10 风险 2）。
  */
 export function EntryMetaBar({
@@ -15,6 +17,8 @@ export function EntryMetaBar({
   onToggleLocalOnly,
   onTagsChange,
   onCollectionChange,
+  onTitleChange,
+  onNoteChange,
 }: {
   entry: Snippet
   collections: ApiCollection[]
@@ -22,15 +26,23 @@ export function EntryMetaBar({
   onToggleLocalOnly: (id: string) => void
   onTagsChange: (id: string, tags: string[]) => void
   onCollectionChange: (id: string, collectionId: number | null) => void
+  onTitleChange: (id: string, title: string) => void
+  onNoteChange: (id: string, note: string) => void
 }) {
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
   const tagsValue = tagsDraft ?? (entry.tags ?? []).join(', ')
+  const [titleDraft, setTitleDraft] = useState<string | null>(null)
+  const titleValue = titleDraft ?? entry.title
+  const [noteDraft, setNoteDraft] = useState<string | null>(null)
+  const noteValue = noteDraft ?? entry.note ?? ''
 
   // 切换条目时放弃未提交的草稿（渲染期重置，等价于对 entry.id 的派生状态）
   const [draftEntryId, setDraftEntryId] = useState(entry.id)
   if (draftEntryId !== entry.id) {
     setDraftEntryId(entry.id)
     setTagsDraft(null)
+    setTitleDraft(null)
+    setNoteDraft(null)
   }
 
   const commitTags = () => {
@@ -44,8 +56,52 @@ export function EntryMetaBar({
     if (tags.join('|') !== before) onTagsChange(entry.id, tags)
   }
 
+  const commitTitle = () => {
+    if (titleDraft === null) return
+    setTitleDraft(null)
+    if (titleDraft.trim() !== entry.title) onTitleChange(entry.id, titleDraft)
+  }
+
+  const commitNote = () => {
+    if (noteDraft === null) return
+    setNoteDraft(null)
+    if (noteDraft.trim() !== (entry.note ?? '')) onNoteChange(entry.id, noteDraft)
+  }
+
   return (
     <div className="entry-meta" aria-label="条目属性">
+      <span className="meta-badge edit" aria-hidden="true">
+        编辑中
+      </span>
+
+      <input
+        type="text"
+        className="entry-title"
+        aria-label="片段标题"
+        placeholder="标题，留空自动取首行"
+        maxLength={SNIPPET_TITLE_MAX_CHARS}
+        value={titleValue}
+        onChange={(e) => setTitleDraft(e.target.value)}
+        onBlur={commitTitle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitTitle()
+        }}
+      />
+
+      <input
+        type="text"
+        className="entry-note"
+        aria-label="片段备注"
+        placeholder="备注：这个片段是做什么的（可选）"
+        maxLength={SNIPPET_NOTE_MAX_CHARS}
+        value={noteValue}
+        onChange={(e) => setNoteDraft(e.target.value)}
+        onBlur={commitNote}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitNote()
+        }}
+      />
+
       <button
         type="button"
         className={`btn ghost icon ${entry.pinned ? 'sage' : ''}`}
@@ -98,6 +154,52 @@ export function EntryMetaBar({
           ))}
         </select>
       )}
+    </div>
+  )
+}
+
+/**
+ * 新片段栏：编辑器里有内容但尚未关联任何已保存条目时显示，
+ * 与「编辑中」条目栏形成明确对照——这里的一切都还没有入库。
+ * 标题/备注作为草稿，随下一次「保存」一起写入片段库。
+ */
+export function NewSnippetBar({
+  title,
+  note,
+  onTitleChange,
+  onNoteChange,
+}: {
+  title: string
+  note: string
+  onTitleChange: (title: string) => void
+  onNoteChange: (note: string) => void
+}) {
+  return (
+    <div className="entry-meta new-snippet" aria-label="新片段，尚未保存">
+      <span className="meta-badge new" aria-hidden="true">
+        新片段
+      </span>
+      <span className="meta-state">尚未保存 · 保存后进入片段库</span>
+
+      <input
+        type="text"
+        className="entry-title"
+        aria-label="新片段标题"
+        placeholder="标题，留空自动取首行"
+        maxLength={SNIPPET_TITLE_MAX_CHARS}
+        value={title}
+        onChange={(e) => onTitleChange(e.target.value)}
+      />
+
+      <input
+        type="text"
+        className="entry-note"
+        aria-label="新片段备注"
+        placeholder="备注：这个片段是做什么的（可选）"
+        maxLength={SNIPPET_NOTE_MAX_CHARS}
+        value={note}
+        onChange={(e) => onNoteChange(e.target.value)}
+      />
     </div>
   )
 }

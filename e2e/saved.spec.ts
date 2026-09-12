@@ -211,3 +211,67 @@ test.describe('手动保存与片段库', () => {
     expect(await page.locator('.detail-content').textContent()).toBe(K3S)
   })
 })
+
+test.describe('片段标题与备注；新片段 / 编辑中 标识', () => {
+  test('未保存内容显示「新片段」栏；填写标题与备注后保存入库', async ({ page }) => {
+    await page.goto('/')
+    await setDoc(page, K3S)
+
+    // 新片段栏出现：徽标 + 说明 + 两个输入框
+    await expect(page.locator('.meta-badge.new')).toBeVisible()
+    await expect(page.getByText('尚未保存 · 保存后进入片段库')).toBeVisible()
+    await page.getByRole('textbox', { name: '新片段标题' }).fill('重装 k3s')
+    await page.getByRole('textbox', { name: '新片段备注' }).fill('master 节点的安装脚本')
+    await saveViaToolbar(page)
+
+    // 入库内容带自定义标题与备注
+    const stored = await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)
+    expect(stored).toContain('重装 k3s')
+    expect(stored).toContain('master 节点的安装脚本')
+
+    // 保存后切换为「编辑中」栏，输入框显示已入库的值
+    await expect(page.locator('.meta-badge.edit')).toBeVisible()
+    await expect(page.locator('.meta-badge.new')).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: '片段标题' })).toHaveValue('重装 k3s')
+
+    // 片段库列表显示备注，详情页备注行逐字一致
+    const saved = await openSaved(page)
+    await expect(saved.locator('.history-item-note')).toHaveText('master 节点的安装脚本')
+    await saved.getByRole('button', { name: /^重装 k3s/ }).click()
+    await expect(page.locator('.detail-title')).toHaveText('重装 k3s')
+    await expect(page.locator('.detail-row', { hasText: '备注' }).locator('dd')).toHaveText(
+      'master 节点的安装脚本',
+    )
+  })
+
+  test('载入已有片段显示「编辑中」；改标题失焦即入库，改内容保存后标题保留', async ({ page }) => {
+    await page.goto('/')
+    await setDoc(page, K3S)
+    await saveViaToolbar(page)
+    // 清空后编辑器为空：两栏都不显示
+    await page.getByRole('button', { name: '清空编辑器' }).click()
+    await page.getByRole('button', { name: '确认清空全部内容' }).click()
+    await expect(page.locator('.meta-badge.new')).toHaveCount(0)
+    await expect(page.locator('.meta-badge.edit')).toHaveCount(0)
+
+    // 从片段库载入：进入「编辑中」态
+    const saved = await openSaved(page)
+    await saved.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }).click()
+    await expect(page.locator('.meta-badge.edit')).toBeVisible()
+
+    // 标题失焦即入库
+    const titleInput = page.getByRole('textbox', { name: '片段标题' })
+    await titleInput.fill('重装 k3s 脚本')
+    await titleInput.blur()
+    let stored = await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)
+    expect(stored).toContain('重装 k3s 脚本')
+
+    // 修改内容再保存：自定义标题不被自动标题覆盖
+    await setDoc(page, K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    await saveViaToolbar(page)
+    stored = await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)
+    expect(stored).toContain('重装 k3s 脚本')
+    expect(stored).toContain('MY_TOKEN')
+    expect(stored).not.toContain('YOUR_TOKEN')
+  })
+})

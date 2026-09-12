@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CodeMirrorEditor } from './components/CodeMirrorEditor'
-import { EntryMetaBar, VariableFillBar } from './components/EntryBar'
+import { EntryMetaBar, NewSnippetBar, VariableFillBar } from './components/EntryBar'
 import { HelpDialog } from './components/HelpDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
@@ -19,7 +19,13 @@ import type { CloudSession } from './cloud/session'
 import type { SyncStatus } from './cloud/sync'
 import type { ApiCollection } from './cloud/api'
 import type { Snippet, SnippetKind } from './storage/snippets'
-import { LOCAL_SNIPPET_STORAGE, MAX_TAGS_PER_SNIPPET, MAX_TAG_CHARS } from './storage/snippets'
+import {
+  LOCAL_SNIPPET_STORAGE,
+  MAX_TAGS_PER_SNIPPET,
+  MAX_TAG_CHARS,
+  SNIPPET_NOTE_MAX_CHARS,
+  SNIPPET_TITLE_MAX_CHARS,
+} from './storage/snippets'
 import { LocalSnippetStore } from './storage/SnippetStore'
 import type { SnippetStore } from './storage/SnippetStore'
 import { loadPrefs, savePrefs } from './storage/prefs'
@@ -89,10 +95,15 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(() => loadPrefs().fontSize)
   const [hintDismissed, setHintDismissed] = useState(() => loadPrefs().hintDismissed)
   const [theme, setTheme] = useState<ThemeId>(() => loadPrefs().theme)
-  const [store, setStore] = useState<SnippetStore>(() => new LocalSnippetStore(LOCAL_SNIPPET_STORAGE))
+  const [store, setStore] = useState<SnippetStore>(
+    () => new LocalSnippetStore(LOCAL_SNIPPET_STORAGE),
+  )
   const [library, setLibrary] = useState<Snippet[]>(() => alive(store.current()))
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [editorKind, setEditorKind] = useState<SnippetKind>('command')
+  /** 新片段的标题/备注草稿：仅在新片段（未关联条目）阶段收集，随下一次保存入库 */
+  const [newTitle, setNewTitle] = useState('')
+  const [newNote, setNewNote] = useState('')
   const [kindFilter, setKindFilter] = useState<SnippetKindFilter>('all')
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -122,6 +133,8 @@ export default function App() {
   const langIdRef = useRef(langId)
   const activeEntryIdRef = useRef<string | null>(activeEntryId)
   const editorKindRef = useRef(editorKind)
+  const newTitleRef = useRef('')
+  const newNoteRef = useRef('')
   const storeRef = useRef(store)
   const sessionRef = useRef<CloudSession | null>(null)
   /** 从片段库跳回编辑器时是否自动聚焦（仅导航触发，刷新不聚焦） */
@@ -158,6 +171,22 @@ export default function App() {
 
   /** 活动条目（编辑器里打开的那条） */
   const activeEntry = library.find((e) => e.id === activeEntryId) ?? null
+
+  // —— 新片段的标题/备注草稿 ——（refs 供 commitSnapshot 读取，避免闭包过期）
+  const resetNewMeta = useCallback(() => {
+    newTitleRef.current = ''
+    newNoteRef.current = ''
+    setNewTitle('')
+    setNewNote('')
+  }, [])
+  const handleNewTitleChange = useCallback((title: string) => {
+    newTitleRef.current = title
+    setNewTitle(title)
+  }, [])
+  const handleNewNoteChange = useCallback((note: string) => {
+    newNoteRef.current = note
+    setNewNote(note)
+  }, [])
 
   // —— 手动保存模型 ——
   // 内容只有点「保存」（或 Ctrl/Cmd+S）才进片段库：非空且与活动条目不一致即为未保存
@@ -288,20 +317,24 @@ export default function App() {
     }
   }, [])
 
-  const handleDocChanged = useCallback((text: string) => {
-    contentRef.current = text
-    setContent(text)
-    // 一旦继续编辑，「已复制」的三处反馈立即收起——绿色描边不能停留在已被改动的内容上
-    window.clearTimeout(copyTimer.current)
-    setCopyFeedback(null)
-    if (text === '') {
-      setManualOverride(false)
-      setPlaceholderCount(0)
-      // 清空编辑器即开始新的粘贴：与片段条目解除关联（条目本身保留）
-      activeEntryIdRef.current = null
-      setActiveEntryId(null)
-    }
-  }, [])
+  const handleDocChanged = useCallback(
+    (text: string) => {
+      contentRef.current = text
+      setContent(text)
+      // 一旦继续编辑，「已复制」的三处反馈立即收起——绿色描边不能停留在已被改动的内容上
+      window.clearTimeout(copyTimer.current)
+      setCopyFeedback(null)
+      if (text === '') {
+        setManualOverride(false)
+        setPlaceholderCount(0)
+        // 清空编辑器即开始新的粘贴：与片段条目解除关联（条目本身保留）
+        activeEntryIdRef.current = null
+        setActiveEntryId(null)
+        resetNewMeta()
+      }
+    },
+    [resetNewMeta],
+  )
 
   const handleLanguageChange = useCallback((id: LangId) => {
     setLangId(id)
@@ -320,7 +353,8 @@ export default function App() {
     if (isThemeId(next)) setTheme(next)
   }, [])
 
-  /** 手动保存：把当前编辑器内容写入/更新片段条目（新建或续写当前条目；与最近一条相同则复用） */
+  /** 手动保存：把当前编辑器内容写入/更新片段条目（新建或续写当前条目；与最近一条相同则复用）。
+   *  新片段栏里的标题/备注草稿随保存一起入库；已有条目的自定义标题不被自动标题覆盖。 */
   const commitSnapshot = useCallback(() => {
     const text = contentRef.current
     if (text.trim() === '') return
@@ -329,23 +363,44 @@ export default function App() {
     const prevId = activeEntryIdRef.current
     const kind = editorKindRef.current
     const langForKind: LangId =
-      kind === 'prompt' ? (langIdRef.current === 'markdown' ? 'markdown' : 'plaintext') : langIdRef.current
+      kind === 'prompt'
+        ? langIdRef.current === 'markdown'
+          ? 'markdown'
+          : 'plaintext'
+        : langIdRef.current
+    const draftTitle = newTitleRef.current.trim().slice(0, SNIPPET_TITLE_MAX_CHARS)
+    const draftNote = newNoteRef.current.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
+    // 「新片段」栏里填了标题/备注 = 用户在给一条新片段起名：此时即使内容与最近一条
+    // 已保存条目完全相同，也不走「复用最近一条」的去重回退——否则草稿元信息会覆盖
+    // 旧条目的标题/备注，与 UI 承诺的新片段相悖（草稿为空时去重行为不变）。
+    const hasDraftMeta = draftTitle !== '' || draftNote !== ''
     const target =
       (prevId ? current.find((e) => e.id === prevId) : undefined) ??
-      (current[0] && current[0].content === text ? current[0] : undefined)
+      (!hasDraftMeta && current[0] && current[0].content === text ? current[0] : undefined)
+    // 自定义标题的不变量：从未改过标题的条目恒有 title === deriveTitle(content)。
+    // 据此保存内容时保留用户起的名字，只让自动标题跟随新内容；新片段栏的草稿标题优先。
+    const title =
+      draftTitle !== ''
+        ? draftTitle
+        : target && target.title !== deriveTitle(target.content)
+          ? target.title
+          : deriveTitle(text)
+    const note = draftNote !== '' ? draftNote : target?.note
     const entry: Snippet = target
       ? {
           ...target,
           content: text,
           langId: (target.kind ?? 'command') === 'prompt' ? langForKind : langIdRef.current,
-          title: deriveTitle(text),
+          title,
+          ...(note !== undefined ? { note } : {}),
           updatedAt: now,
           syncState: sessionRef.current ? 'pending' : 'local',
         }
       : {
           id: createHistoryId(),
-          title: deriveTitle(text),
+          title,
           content: text,
+          ...(note !== undefined ? { note } : {}),
           langId: langForKind,
           createdAt: now,
           updatedAt: now,
@@ -354,8 +409,9 @@ export default function App() {
         }
     activeEntryIdRef.current = entry.id
     setActiveEntryId(entry.id)
+    resetNewMeta()
     storeRef.current.upsert(entry)
-  }, [])
+  }, [resetNewMeta])
 
   /** 「保存」按钮 / Ctrl/Cmd+S：唯一的入库入口 */
   const handleSave = useCallback(() => {
@@ -387,19 +443,23 @@ export default function App() {
   )
 
   /** 把条目载入编辑器（不做保存——未保存的修改由确认对话框把关） */
-  const loadEntryIntoEditor = useCallback((id: string) => {
-    const entry = libraryRef.current.find((e) => e.id === id)
-    if (!entry) return
-    activeEntryIdRef.current = id
-    setActiveEntryId(id)
-    const entryKind = entry.kind ?? 'command'
-    setEditorKind(entryKind)
-    setLangId(entryKind === 'prompt' && entry.langId !== 'markdown' ? 'plaintext' : entry.langId)
-    setManualOverride(true)
-    editorRef.current?.setDoc(entry.content)
-    pendingFocusRef.current = true
-    navigate('/')
-  }, [])
+  const loadEntryIntoEditor = useCallback(
+    (id: string) => {
+      const entry = libraryRef.current.find((e) => e.id === id)
+      if (!entry) return
+      activeEntryIdRef.current = id
+      setActiveEntryId(id)
+      resetNewMeta()
+      const entryKind = entry.kind ?? 'command'
+      setEditorKind(entryKind)
+      setLangId(entryKind === 'prompt' && entry.langId !== 'markdown' ? 'plaintext' : entry.langId)
+      setManualOverride(true)
+      editorRef.current?.setDoc(entry.content)
+      pendingFocusRef.current = true
+      navigate('/')
+    },
+    [resetNewMeta],
+  )
 
   const handleOpenEntry = useCallback(
     (id: string) => guardUnsaved(() => loadEntryIntoEditor(id)),
@@ -411,7 +471,8 @@ export default function App() {
     if (activeEntryIdRef.current === null) return
     activeEntryIdRef.current = null
     setActiveEntryId(null)
-  }, [])
+    resetNewMeta()
+  }, [resetNewMeta])
 
   const handleDeleteEntry = useCallback((id: string) => {
     // 云端模式：remove 触发 onRemove 钩子 → 入队软删除（墓碑由服务端传播）
@@ -442,7 +503,8 @@ export default function App() {
     storeRef.current.replaceAll([])
     activeEntryIdRef.current = null
     setActiveEntryId(null)
-  }, [])
+    resetNewMeta()
+  }, [resetNewMeta])
 
   const handleNewPaste = useCallback(() => {
     guardUnsaved(() => {
@@ -452,17 +514,19 @@ export default function App() {
       setLangId((prev) => (prev === 'markdown' ? 'plaintext' : prev))
       activeEntryIdRef.current = null
       setActiveEntryId(null)
+      resetNewMeta()
       editorRef.current?.setDoc('')
       pendingFocusRef.current = true
       navigate('/')
     })
-  }, [guardUnsaved])
+  }, [guardUnsaved, resetNewMeta])
 
   /** 新建 Prompt：编辑器切到 prompt 形态（软换行 + {{变量}} 占位符），不识别语言 */
   const handleNewPrompt = useCallback(() => {
     guardUnsaved(() => {
       activeEntryIdRef.current = null
       setActiveEntryId(null)
+      resetNewMeta()
       setEditorKind('prompt')
       setLangId('markdown')
       setManualOverride(true)
@@ -470,7 +534,7 @@ export default function App() {
       pendingFocusRef.current = true
       navigate('/')
     })
-  }, [guardUnsaved])
+  }, [guardUnsaved, resetNewMeta])
 
   /** 未保存确认对话框的三个去向 */
   const closePendingNav = useCallback(() => setPendingNav(null), [])
@@ -526,6 +590,36 @@ export default function App() {
     })
   }, [])
 
+  /** 编辑已有片段的标题（立即入库，与标签同策略）：留空 = 恢复自动标题（取内容首行） */
+  const handleTitleChange = useCallback((id: string, rawTitle: string) => {
+    const entry = libraryRef.current.find((e) => e.id === id)
+    if (!entry) return
+    const title = rawTitle.trim().slice(0, SNIPPET_TITLE_MAX_CHARS) || deriveTitle(entry.content)
+    if (title === entry.title) return
+    storeRef.current.upsert({
+      ...entry,
+      title,
+      syncState: sessionRef.current ? 'pending' : 'local',
+      updatedAt: Date.now(),
+    })
+  }, [])
+
+  /** 编辑已有片段的备注（立即入库）：留空 = 清除备注 */
+  const handleNoteChange = useCallback((id: string, rawNote: string) => {
+    const entry = libraryRef.current.find((e) => e.id === id)
+    if (!entry) return
+    const note = rawNote.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
+    if (note === (entry.note ?? '')) return
+    const next: Snippet = {
+      ...entry,
+      syncState: sessionRef.current ? 'pending' : 'local',
+      updatedAt: Date.now(),
+    }
+    if (note === '') delete next.note
+    else next.note = note
+    storeRef.current.upsert(next)
+  }, [])
+
   const handleTagsChange = useCallback((id: string, tags: string[]) => {
     const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
@@ -565,6 +659,7 @@ export default function App() {
       kind: s.kind ?? 'command',
       title: s.title,
       content: s.content,
+      ...(s.note ? { note: s.note } : {}),
       langId: s.langId,
       pinned: s.pinned === true,
       localOnly: s.localOnly === true,
@@ -572,9 +667,12 @@ export default function App() {
       createdAt: new Date(s.createdAt).toISOString(),
       updatedAt: new Date(s.updatedAt).toISOString(),
     }))
-    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), snippets: data }, null, 2)], {
-      type: 'application/json',
-    })
+    const blob = new Blob(
+      [JSON.stringify({ exportedAt: new Date().toISOString(), snippets: data }, null, 2)],
+      {
+        type: 'application/json',
+      },
+    )
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -635,14 +733,17 @@ export default function App() {
   )
 
   // —— 云端会话接线（对话框回调）——
-  const handleSessionReady = useCallback((session: CloudSession, nextCollections: ApiCollection[]) => {
-    sessionRef.current = session
-    setCloudSession(session)
-    setCloudUser(session.user)
-    setSyncStatus(session.engine.currentStatus())
-    setStore(session.store)
-    setCollections(nextCollections)
-  }, [])
+  const handleSessionReady = useCallback(
+    (session: CloudSession, nextCollections: ApiCollection[]) => {
+      sessionRef.current = session
+      setCloudSession(session)
+      setCloudUser(session.user)
+      setSyncStatus(session.engine.currentStatus())
+      setStore(session.store)
+      setCollections(nextCollections)
+    },
+    [],
+  )
 
   const handleLogout = useCallback(async () => {
     if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
@@ -743,9 +844,10 @@ export default function App() {
     if (api) jumpToPlaceholder(api.view, dir)
   }, [])
 
-  const filteredByCollection = activeCollectionId === null
-    ? library
-    : library.filter((s) => s.collectionId === activeCollectionId)
+  const filteredByCollection =
+    activeCollectionId === null
+      ? library
+      : library.filter((s) => s.collectionId === activeCollectionId)
 
   const cloudStatusView: CloudStatusView | undefined =
     import.meta.env.VITE_CLOUD_ENABLED === 'true'
@@ -812,6 +914,7 @@ export default function App() {
           onOpenSaved={() => navigate(SAVED_PATH)}
           savedCount={library.length}
           saveState={content.trim() === '' ? 'empty' : dirty ? 'dirty' : 'saved'}
+          saveTarget={activeEntry ? 'existing' : 'new'}
           onSave={handleSave}
           placeholderCount={placeholderCount}
           onPrevPlaceholder={() => jump(-1)}
@@ -867,6 +970,17 @@ export default function App() {
                 onToggleLocalOnly={handleToggleLocalOnly}
                 onTagsChange={handleTagsChange}
                 onCollectionChange={handleCollectionChange}
+                onTitleChange={handleTitleChange}
+                onNoteChange={handleNoteChange}
+              />
+            )}
+
+            {activeEntry === null && content.trim() !== '' && (
+              <NewSnippetBar
+                title={newTitle}
+                note={newNote}
+                onTitleChange={handleNewTitleChange}
+                onNoteChange={handleNewNoteChange}
               />
             )}
 

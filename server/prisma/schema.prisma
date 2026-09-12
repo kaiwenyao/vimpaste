@@ -70,6 +70,8 @@ model Snippet {
   kind    SnippetKind
   title   String
   content String
+  /// 备注：这个片段是做什么的（可选元信息，null 视为无备注）
+  note    String?
   /// 仅 command 有意义；取值由前端 isLangId() 白名单校验后写入
   langId  String      @default("plaintext")
 

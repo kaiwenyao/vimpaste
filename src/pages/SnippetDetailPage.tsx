@@ -177,6 +177,9 @@ export function SnippetDetailPage({
               '无'
             )}
           </InfoRow>
+          <InfoRow label="备注">
+            {entry.note ? <span className="detail-note">{entry.note}</span> : '无'}
+          </InfoRow>
           <InfoRow label="集合">{collection ? collection.name : '无'}</InfoRow>
           <InfoRow label="置顶">{entry.pinned ? '是' : '否'}</InfoRow>
           <InfoRow label="同步状态">

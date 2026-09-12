@@ -229,6 +229,70 @@
   color: var(--muted-2);
 }
 
+/* —— 新片段 / 编辑中 的身份标识与标题、备注输入 —— */
+
+.meta-badge {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  line-height: 1.5;
+}
+
+/* 新片段：主色，提醒「这些内容还没入库」 */
+.meta-badge.new {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+}
+
+/* 编辑中：鼠尾草绿，示意内容已有归属、保存即续写 */
+.meta-badge.edit {
+  color: var(--sage-ink);
+  background: var(--sage-soft);
+  border: 1px solid var(--sage-border);
+}
+
+.meta-state {
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.entry-title,
+.entry-note {
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 12px;
+  font-family: var(--font-ui);
+}
+
+.entry-title {
+  flex: 2 1 170px;
+  min-width: 140px;
+  max-width: 300px;
+}
+
+.entry-note {
+  flex: 3 1 220px;
+  min-width: 160px;
+}
+
+.entry-title::placeholder,
+.entry-note::placeholder {
+  color: var(--muted-2);
+}
+
+.entry-title:focus,
+.entry-note:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
 .select.small {
   font-size: 12px;
   padding: 3px 26px 3px 12px;

@@ -23,6 +23,8 @@ export type SnippetSyncState = 'local' | 'pending' | 'synced'
 export interface Snippet extends HistoryEntry {
   /** 旧数据一律视为 'command'（缺省时即 command） */
   kind?: SnippetKind
+  /** 备注：这个片段是做什么的（可选元信息；留空视为无备注） */
+  note?: string
   pinned?: boolean
   /** 仅本地：永不离开浏览器（plan-v2-accounts.md §7.4） */
   localOnly?: boolean
@@ -42,6 +44,11 @@ export const MAX_CACHED_SNIPPETS = 500
 /** 与 v1 一致的单条上限：单条内容超过时不保存 */
 export const SNIPPET_MAX_CHARS = 100_000
 
+/** 标题上限：与服务端 schema（title ≤ 200）对齐 */
+export const SNIPPET_TITLE_MAX_CHARS = 200
+/** 备注上限：与服务端 schema 对齐 */
+export const SNIPPET_NOTE_MAX_CHARS = 2000
+
 export const LOCAL_STORAGE_KEY = 'vimpaste.history.v1'
 /** 登录用户的本地缓存键前缀：按用户隔离——同一浏览器先后登录不同账号时，
  * 缓存、同步队列互不可见，A 的待推内容绝不会被推进 B 的账号 */
@@ -54,10 +61,15 @@ export function sanitizeSnippet(raw: unknown): Snippet | null {
   if (typeof r.id !== 'string' || r.id === '') return null
   if (typeof r.content !== 'string') return null
   if (r.content === '' || r.content.length > SNIPPET_MAX_CHARS) return null
+  const note = sanitizeNote(r.note)
   return {
     id: r.id,
-    title: typeof r.title === 'string' && r.title !== '' ? r.title : deriveTitle(r.content),
+    title:
+      typeof r.title === 'string' && r.title !== ''
+        ? r.title.trim().slice(0, SNIPPET_TITLE_MAX_CHARS) || deriveTitle(r.content)
+        : deriveTitle(r.content),
     content: r.content,
+    ...(note !== undefined ? { note } : {}),
     langId: isLangId(r.langId) ? (r.langId as LangId) : 'plaintext',
     createdAt: toTime(r.createdAt),
     updatedAt: toTime(r.updatedAt),
@@ -85,11 +97,20 @@ export const MAX_TAG_CHARS = 64
 
 function sanitizeTags(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return [...new Set(
-    value
-      .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
-      .map((t) => t.trim().slice(0, MAX_TAG_CHARS)),
-  )].slice(0, MAX_TAGS_PER_SNIPPET)
+  return [
+    ...new Set(
+      value
+        .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+        .map((t) => t.trim().slice(0, MAX_TAG_CHARS)),
+    ),
+  ].slice(0, MAX_TAGS_PER_SNIPPET)
+}
+
+/** 备注清洗：非字符串丢弃，空白折叠为无备注，超长截断 */
+function sanitizeNote(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim().slice(0, SNIPPET_NOTE_MAX_CHARS).trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 /** 存储后端描述：匿名与云端缓存只是键与上限不同 */
@@ -131,9 +152,9 @@ export function loadSnippetsFrom(config: SnippetStorageConfig): Snippet[] {
 
 /** 覆盖式写入（含墓碑，供云端缓存持久化）；容量不足时从最旧开始丢弃重试 */
 export function saveSnippetsTo(config: SnippetStorageConfig, entries: Snippet[]): void {
-  let list = sortSnippets(entries.filter(
-    (s) => s.content !== '' && s.content.length <= SNIPPET_MAX_CHARS,
-  )).slice(0, config.maxEntries)
+  let list = sortSnippets(
+    entries.filter((s) => s.content !== '' && s.content.length <= SNIPPET_MAX_CHARS),
+  ).slice(0, config.maxEntries)
   while (list.length > 0) {
     try {
       localStorage.setItem(config.key, JSON.stringify(list))

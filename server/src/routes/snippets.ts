@@ -92,6 +92,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               OR: [
                 { title: { contains: query.q, mode: 'insensitive' } },
                 { content: { contains: query.q, mode: 'insensitive' } },
+                { note: { contains: query.q, mode: 'insensitive' } },
               ],
             }
           : {}),
@@ -170,6 +171,8 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
           kind: sanitized.kind,
           title: sanitized.title,
           content: sanitized.content,
+          // 创建行时省略视为无备注；更新路径由 dataFromPayload 区分省略与显式 null
+          note: sanitized.note ?? null,
           langId: sanitized.langId,
           pinned: sanitized.pinned,
           usageCount: sanitized.usageCount,
@@ -215,6 +218,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
         data: {
           ...(patch.title !== undefined ? { title: patch.title } : {}),
           ...(patch.content !== undefined ? { content: patch.content } : {}),
+          ...(patch.note !== undefined ? { note: patch.note } : {}),
           ...(patch.langId !== undefined ? { langId: patch.langId } : {}),
           ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
           ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
@@ -319,6 +323,7 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               kind: change.kind,
               title: change.title,
               content: change.content,
+              note: change.note ?? null,
               langId: change.langId,
               pinned: change.pinned,
               usageCount: change.usageCount,
@@ -343,6 +348,8 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
               kind: change.kind,
               title: change.title,
               content: change.content,
+              // 旧版客户端不送 note 时不得覆盖服务端已有备注：省略 ≠ 显式 null
+              ...(change.note !== undefined ? { note: change.note } : {}),
               langId: change.langId,
               pinned: change.pinned,
               usageCount: change.usageCount,
@@ -410,6 +417,7 @@ function dataFromPayload(s: {
   kind: 'command' | 'prompt'
   title: string
   content: string
+  note?: string | null
   langId: string
   pinned: boolean
   usageCount: number
@@ -421,6 +429,8 @@ function dataFromPayload(s: {
     kind: s.kind,
     title: s.title,
     content: s.content,
+    // 旧版客户端不送 note 时不得覆盖服务端已有备注：省略 ≠ 显式 null
+    ...(s.note !== undefined ? { note: s.note } : {}),
     langId: s.langId,
     pinned: s.pinned,
     usageCount: s.usageCount,

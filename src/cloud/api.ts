@@ -15,6 +15,7 @@ export interface ApiSnippet {
   kind: 'command' | 'prompt'
   title: string
   content: string
+  note: string | null
   langId: string
   pinned: boolean
   usageCount: number

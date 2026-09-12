@@ -172,6 +172,62 @@ describe.skipIf(!dbUp)('Snippet API', () => {
     expect(rowA.ownerId).toBe(alice.id)
   })
 
+  it('备注 note：创建入库、PATCH 可清空（null）、可按 q 搜索命中', async () => {
+    const created = await createAs(alice.cookie, { note: '重装 k3s 的安装脚本' })
+    expect(created.statusCode).toBe(201)
+    expect(created.json().data.note).toBe('重装 k3s 的安装脚本')
+
+    // 按备注搜索命中（GET / 的 q 同时扫 title/content/note）
+    const hit = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/snippets?q=安装脚本',
+      headers: { cookie: alice.cookie },
+    })
+    expect(hit.json().data).toHaveLength(1)
+    expect(hit.json().data[0].id).toBe(uuid(1))
+
+    // PATCH 清空备注
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/snippets/${uuid(1)}`,
+      headers: { cookie: alice.cookie },
+      payload: { note: null, updatedAt: Date.now() + 5000 },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().data.note).toBeNull()
+
+    // 清空后按备注搜索不再命中
+    const miss = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/snippets?q=安装脚本',
+      headers: { cookie: alice.cookie },
+    })
+    expect(miss.json().data).toHaveLength(0)
+  })
+
+  it('旧版客户端省略 note 的更新不清空已有备注（省略 ≠ 显式 null）', async () => {
+    await createAs(alice.cookie, { note: '要保留的备注' })
+
+    // 旧版客户端的 upsert（POST 同 id、updatedAt 更新、不带 note 字段）
+    const upsert = await createAs(alice.cookie, {
+      title: '旧版客户端的修改',
+      updatedAt: Date.now() + 5000,
+    })
+    expect(upsert.statusCode).toBe(200)
+    expect(upsert.json().data.note).toBe('要保留的备注')
+
+    // sync 上行同样省略 note：备注保留
+    const synced = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/snippets/sync',
+      headers: { cookie: alice.cookie },
+      payload: { since: 0, changes: [snippetPayload({ updatedAt: Date.now() + 6000 })] },
+    })
+    expect(synced.json().data.applied).toEqual([uuid(1)])
+    const row = await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(1) } })
+    expect(row.note).toBe('要保留的备注')
+  })
+
   it('搜索 q 命中标题与内容（大小写不敏感），kind 过滤生效', async () => {
     await createAs(alice.cookie)
     await createAs(alice.cookie, {
