@@ -24,6 +24,15 @@ pipeline {
             // 与 firmament 各流水线共用同一个云；若那里改了名字，这里要同步。
             cloud 'kubernetes'
 
+            // 继承 Jenkins 上的「ci-base」公共 Pod 模板：节点选择（ci-worker 标签）、
+            // 拓扑打散等公共调度规则由父模板统一维护，各项目流水线不各自复制。
+            inheritFrom 'ci-base'
+
+            // 合并策略很关键：插件默认是「覆盖」——下方 yaml 会整体顶掉父模板里的
+            // spec 字段，公共调度规则会因此失效。merge() 按字段合并：父模板规则
+            // 保留，本流水线再叠加自己的容器与卷。
+            yamlMergeStrategy merge()
+
             // 直接在流水线里内联 Pod 定义，而不是引用 Jenkins UI 上预设的
             // Pod Template，构建环境随代码一起版本化，可评审、可回滚。
             yaml '''
