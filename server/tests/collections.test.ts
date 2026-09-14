@@ -175,4 +175,41 @@ describe.skipIf(!dbUp)('Collections & Tags', () => {
     })
     expect(del.statusCode).toBe(404)
   })
+
+  it('无 body 的 DELETE 带 Content-Type: application/json 也成功（浏览器 fetch 的真实行为）', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie, 'content-type': 'application/json' },
+      payload: { name: '待删除' },
+    })
+    const id = created.json().data.id
+    // 回归：前端 fetch 客户端曾对无 body 的 DELETE 一律声明 application/json，
+    // 默认解析器按空 JSON 解析直接抛 400「请求无法处理」，删除收藏夹全部失败
+    const del = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/collections/${id}`,
+      headers: { cookie: alice.cookie, 'content-type': 'application/json' },
+    })
+    expect(del.statusCode).toBe(200)
+    expect(del.json().data).toMatchObject({ id, deleted: true })
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie },
+    })
+    expect(list.json().data.map((c: { name: string }) => c.name)).toEqual(['default'])
+  })
+
+  it('坏 JSON 仍按 400「请求无法处理」拒绝（空 body 容忍不放过坏数据）', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie, 'content-type': 'application/json' },
+      payload: '{not-json',
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatchObject({ code: 'BAD_REQUEST', message: '请求无法处理' })
+  })
 })

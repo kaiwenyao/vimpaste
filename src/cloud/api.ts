@@ -72,7 +72,12 @@ async function request<T>(
     res = await fetch(path, {
       credentials: 'same-origin',
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+      // 只在确有 body 时声明 Content-Type：无 body 的 DELETE 一旦带上
+      // application/json，服务端会按 JSON 解析空请求体而直接拒绝（400）
+      headers: {
+        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
     })
   } catch {
     throw new CloudApiError(0, 'NETWORK', '网络不可用，稍后会自动重试')
