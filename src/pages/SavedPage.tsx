@@ -236,13 +236,13 @@ export function SavedPage(props: SavedPageProps) {
       </div>
 
       {cloudMode && (
-        <div className="history-collections" aria-label="集合">
+        <div className="history-collections" aria-label="收藏夹">
           <button
             type="button"
             className={`chip small ${activeCollectionId === null ? 'active' : ''}`}
             onClick={() => onSelectCollection?.(null)}
           >
-            全部集合
+            全部收藏夹
           </button>
           {collections.map((c) => (
             <span
@@ -252,7 +252,7 @@ export function SavedPage(props: SavedPageProps) {
               {renamingId === c.id ? (
                 <input
                   className="collection-rename"
-                  aria-label="重命名集合"
+                  aria-label="重命名收藏夹"
                   value={renameValue}
                   autoFocus
                   onChange={(e) => setRenameValue(e.target.value)}
@@ -279,7 +279,7 @@ export function SavedPage(props: SavedPageProps) {
               <button
                 type="button"
                 className="collection-manage"
-                aria-label={`删除集合「${c.name}」`}
+                aria-label={`删除收藏夹「${c.name}」`}
                 onClick={() => void onDeleteCollection?.(c.id)}
               >
                 <IconClose size={9} />
@@ -290,8 +290,8 @@ export function SavedPage(props: SavedPageProps) {
             <input
               type="text"
               className="collection-input"
-              placeholder="新建集合"
-              aria-label="新建集合名称"
+              placeholder="新建收藏夹"
+              aria-label="新建收藏夹名称"
               value={collectionName}
               onChange={(e) => setCollectionName(e.target.value)}
               onKeyDown={(e) => {

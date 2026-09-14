@@ -54,7 +54,7 @@ async function assertCollectionOwned(
 
 /**
  * sync 端点的 collectionId 归属解析：非法（不存在或属于他人）一律置 null，
- * 不让整批 sync 400/500——集合归属只是元数据，内容必须照常同步，
+ * 不让整批 sync 400/500——收藏夹归属只是元数据，内容必须照常同步，
  * 否则一条失效引用会把客户端队列永远堵住。直接 CRUD 路由仍走 assertCollectionOwned 报 400。
  */
 async function resolveOwnedCollectionId(

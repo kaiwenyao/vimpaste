@@ -258,12 +258,12 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(screen.getByText('30 秒前', { selector: '.detail-sub' })).toBeInTheDocument()
     expect(screen.getByText('k3s')).toBeInTheDocument()
     expect(screen.getByText('install')).toBeInTheDocument()
-    // 集合与备注都无值时各自显示「无」（按行定位，避免多行「无」互相误配）
+    // 收藏夹与备注都无值时各自显示「无」（按行定位，避免多行「无」互相误配）
     const ddOfRow = (label: string) => {
       const row = screen.getByText(label, { selector: 'dt' }).closest('.detail-row')
       return row?.querySelector('dd')?.textContent
     }
-    expect(ddOfRow('集合')).toBe('无')
+    expect(ddOfRow('收藏夹')).toBe('无')
     expect(ddOfRow('备注')).toBe('无')
   })
 
