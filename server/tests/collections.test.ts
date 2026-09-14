@@ -1,5 +1,5 @@
 /**
- * 集合与标签路由测试（plan-v2-accounts.md Phase 3）。
+ * 收藏夹与标签路由测试（plan-v2-accounts.md Phase 3）。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -21,7 +21,45 @@ describe.skipIf(!dbUp)('Collections & Tags', () => {
     alice = await createUserAndLogin(ctx, 'alice@example.com')
   })
 
-  it('集合 CRUD：创建、重名 409、更新、删除', async () => {
+  it('GET 列表在没有任何收藏夹时懒创建 default，且幂等', async () => {
+    const first = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie },
+    })
+    expect(first.statusCode).toBe(200)
+    const rows = first.json().data
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ name: 'default' })
+
+    // 再次 GET 不重复创建
+    const second = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie },
+    })
+    expect(second.json().data).toHaveLength(1)
+    expect(second.json().data[0].id).toBe(rows[0].id)
+
+    // 删掉 default 后回到空状态：下次 GET 重新获得默认收藏夹
+    const del = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/collections/${rows[0].id}`,
+      headers: { cookie: alice.cookie },
+    })
+    expect(del.statusCode).toBe(200)
+    const third = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie },
+    })
+    const recreated = third.json().data
+    expect(recreated).toHaveLength(1)
+    expect(recreated[0]).toMatchObject({ name: 'default' })
+    expect(recreated[0].id).not.toBe(rows[0].id)
+  })
+
+  it('收藏夹 CRUD：创建、重名 409、更新、删除', async () => {
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/collections',
@@ -59,10 +97,12 @@ describe.skipIf(!dbUp)('Collections & Tags', () => {
       url: '/api/collections',
       headers: { cookie: alice.cookie },
     })
-    expect(list.json().data).toHaveLength(0)
+    // 自建的收藏夹删掉了，只剩懒创建的 default
+    expect(list.json().data).toHaveLength(1)
+    expect(list.json().data[0].name).toBe('default')
   })
 
-  it('删除集合时条目保留（collectionId 置空，SetNull）', async () => {
+  it('删除收藏夹时条目保留（collectionId 置空，SetNull）', async () => {
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/collections',
@@ -101,22 +141,24 @@ describe.skipIf(!dbUp)('Collections & Tags', () => {
     expect(snippet.collectionId).toBeNull()
   })
 
-  it('A 用户的集合对 B 不可见、不可改、不可删', async () => {
+  it('A 用户的收藏夹对 B 不可见、不可改、不可删', async () => {
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/collections',
       headers: { cookie: alice.cookie },
-      payload: { name: 'Alice 的集合' },
+      payload: { name: 'Alice 的收藏夹' },
     })
     const id = created.json().data.id
     const bob = await createUserAndLogin(ctx, 'bob@example.com')
 
+    // B 只看得到自己的 default，看不到 A 的收藏夹
     const list = await ctx.app.inject({
       method: 'GET',
       url: '/api/collections',
       headers: { cookie: bob.cookie },
     })
-    expect(list.json().data).toHaveLength(0)
+    const bobNames = list.json().data.map((c: { name: string }) => c.name)
+    expect(bobNames).toEqual(['default'])
 
     const patch = await ctx.app.inject({
       method: 'PATCH',

@@ -84,6 +84,11 @@ function alive(list: Snippet[]): Snippet[] {
   return list.filter((s) => s.deletedAt == null)
 }
 
+/** default 收藏夹的 id：新片段未明确选择收藏夹时的保存落点（不存在时为 null） */
+function defaultCollectionId(collections: ApiCollection[]): number | null {
+  return collections.find((c) => c.name === 'default')?.id ?? null
+}
+
 export default function App() {
   const editorRef = useRef<EditorApi | null>(null)
   const [content, setContent] = useState('')
@@ -104,6 +109,8 @@ export default function App() {
   /** 新片段的标题/备注草稿：仅在新片段（未关联条目）阶段收集，随下一次保存入库 */
   const [newTitle, setNewTitle] = useState('')
   const [newNote, setNewNote] = useState('')
+  /** 新片段的目标收藏夹草稿：'auto' = 未选择（保存时落 default 收藏夹） */
+  const [newCollectionId, setNewCollectionId] = useState<number | null | 'auto'>('auto')
   const [kindFilter, setKindFilter] = useState<SnippetKindFilter>('all')
   const [vimMode, setVimMode] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -135,8 +142,10 @@ export default function App() {
   const editorKindRef = useRef(editorKind)
   const newTitleRef = useRef('')
   const newNoteRef = useRef('')
+  const newCollectionRef = useRef<number | null | 'auto'>('auto')
   const storeRef = useRef(store)
   const sessionRef = useRef<CloudSession | null>(null)
+  const collectionsRef = useRef<ApiCollection[]>([])
   /** 从片段库跳回编辑器时是否自动聚焦（仅导航触发，刷新不聚焦） */
   const pendingFocusRef = useRef(false)
 
@@ -158,6 +167,9 @@ export default function App() {
   useEffect(() => {
     sessionRef.current = cloudSession
   }, [cloudSession])
+  useEffect(() => {
+    collectionsRef.current = collections
+  }, [collections])
 
   // store 换绑（登录 / 登出）或条目变化：同步快照到 React 状态（墓碑不进 UI）
   useEffect(() => {
@@ -176,8 +188,10 @@ export default function App() {
   const resetNewMeta = useCallback(() => {
     newTitleRef.current = ''
     newNoteRef.current = ''
+    newCollectionRef.current = 'auto'
     setNewTitle('')
     setNewNote('')
+    setNewCollectionId('auto')
   }, [])
   const handleNewTitleChange = useCallback((title: string) => {
     newTitleRef.current = title
@@ -186,6 +200,10 @@ export default function App() {
   const handleNewNoteChange = useCallback((note: string) => {
     newNoteRef.current = note
     setNewNote(note)
+  }, [])
+  const handleNewCollectionChange = useCallback((collectionId: number | null) => {
+    newCollectionRef.current = collectionId
+    setNewCollectionId(collectionId)
   }, [])
 
   // —— 手动保存模型 ——
@@ -235,7 +253,7 @@ export default function App() {
       try {
         setCollections(await cloudApi.collections())
       } catch {
-        /* 集合加载失败不阻塞编辑，下次登录/同步时重试 */
+        /* 收藏夹加载失败不阻塞编辑，下次登录/同步时重试 */
       }
     })()
     return () => {
@@ -354,7 +372,7 @@ export default function App() {
   }, [])
 
   /** 手动保存：把当前编辑器内容写入/更新片段条目（新建或续写当前条目；与最近一条相同则复用）。
-   *  新片段栏里的标题/备注草稿随保存一起入库；已有条目的自定义标题不被自动标题覆盖。 */
+   *  新片段栏里的标题/备注与目标收藏夹随保存一起入库；已有条目的自定义标题不被自动标题覆盖。 */
   const commitSnapshot = useCallback(() => {
     const text = contentRef.current
     if (text.trim() === '') return
@@ -370,6 +388,11 @@ export default function App() {
         : langIdRef.current
     const draftTitle = newTitleRef.current.trim().slice(0, SNIPPET_TITLE_MAX_CHARS)
     const draftNote = newNoteRef.current.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
+    // 目标收藏夹：'auto' = 用户没碰过选择器，落 default 收藏夹（不存在则不入夹）
+    const draftCollectionId =
+      newCollectionRef.current === 'auto'
+        ? defaultCollectionId(collectionsRef.current)
+        : newCollectionRef.current
     // 「新片段」栏里填了标题/备注 = 用户在给一条新片段起名：此时即使内容与最近一条
     // 已保存条目完全相同，也不走「复用最近一条」的去重回退——否则草稿元信息会覆盖
     // 旧条目的标题/备注，与 UI 承诺的新片段相悖（草稿为空时去重行为不变）。
@@ -402,6 +425,7 @@ export default function App() {
           content: text,
           ...(note !== undefined ? { note } : {}),
           langId: langForKind,
+          collectionId: draftCollectionId,
           createdAt: now,
           updatedAt: now,
           kind,
@@ -682,7 +706,7 @@ export default function App() {
     showToast('已导出 JSON 文件', 'ok')
   }, [showToast])
 
-  // —— 集合管理（云端模式；运行时动态 import 云模块）——
+  // —— 收藏夹管理（云端模式；运行时动态 import 云模块）——
   const refreshCollections = useCallback(async () => {
     if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
     const { cloudApi } = await import('./cloud/api')
@@ -697,7 +721,7 @@ export default function App() {
         await cloudApi.createCollection(name)
         await refreshCollections()
       } catch (e) {
-        showToast(e instanceof Error ? e.message : '集合创建失败', 'err')
+        showToast(e instanceof Error ? e.message : '收藏夹创建失败', 'err')
       }
     },
     [refreshCollections, showToast],
@@ -711,7 +735,7 @@ export default function App() {
         await cloudApi.renameCollection(id, name)
         await refreshCollections()
       } catch (e) {
-        showToast(e instanceof Error ? e.message : '集合重命名失败', 'err')
+        showToast(e instanceof Error ? e.message : '收藏夹重命名失败', 'err')
       }
     },
     [refreshCollections, showToast],
@@ -726,7 +750,7 @@ export default function App() {
         await refreshCollections()
         setActiveCollectionId((prev) => (prev === id ? null : prev))
       } catch (e) {
-        showToast(e instanceof Error ? e.message : '集合删除失败', 'err')
+        showToast(e instanceof Error ? e.message : '收藏夹删除失败', 'err')
       }
     },
     [refreshCollections, showToast],
@@ -979,6 +1003,11 @@ export default function App() {
               <NewSnippetBar
                 title={newTitle}
                 note={newNote}
+                collections={collections}
+                collectionId={
+                  newCollectionId === 'auto' ? defaultCollectionId(collections) : newCollectionId
+                }
+                onCollectionChange={handleNewCollectionChange}
                 onTitleChange={handleNewTitleChange}
                 onNoteChange={handleNewNoteChange}
               />

@@ -6,7 +6,7 @@ import { IconCheck, IconCopy, IconLock, IconPin } from './icons'
 
 /**
  * 条目元信息条（plan-v2-accounts.md §5/§7.4/§8）：
- * 当前编辑条目的 标题/备注、置顶、仅本地开关、标签与集合编辑。
+ * 当前编辑条目的 标题/备注、置顶、仅本地开关、标签与收藏夹编辑。
  * 开头的「编辑中」徽标向用户明示：编辑器里是已有片段，不是新片段。
  * 「仅本地」做在显眼位置——用户会往里存真实密钥（§10 风险 2）。
  */
@@ -140,13 +140,13 @@ export function EntryMetaBar({
       {collections.length > 0 && (
         <select
           className="select small"
-          aria-label="所属集合"
+          aria-label="所属收藏夹"
           value={entry.collectionId ?? ''}
           onChange={(e) =>
             onCollectionChange(entry.id, e.target.value === '' ? null : Number(e.target.value))
           }
         >
-          <option value="">无集合</option>
+          <option value="">无收藏夹</option>
           {collections.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -161,16 +161,24 @@ export function EntryMetaBar({
 /**
  * 新片段栏：编辑器里有内容但尚未关联任何已保存条目时显示，
  * 与「编辑中」条目栏形成明确对照——这里的一切都还没有入库。
- * 标题/备注作为草稿，随下一次「保存」一起写入片段库。
+ * 标题/备注作为草稿，随下一次「保存」一起写入片段库；
+ * 保存目标收藏夹也在这里选定，默认落在 default 收藏夹（云端模式）。
  */
 export function NewSnippetBar({
   title,
   note,
+  collections = [],
+  collectionId,
+  onCollectionChange,
   onTitleChange,
   onNoteChange,
 }: {
   title: string
   note: string
+  /** 云端模式下传入；匿名构建恒为空、不显示收藏夹选择 */
+  collections?: ApiCollection[]
+  collectionId: number | null
+  onCollectionChange: (collectionId: number | null) => void
   onTitleChange: (title: string) => void
   onNoteChange: (note: string) => void
 }) {
@@ -200,6 +208,24 @@ export function NewSnippetBar({
         value={note}
         onChange={(e) => onNoteChange(e.target.value)}
       />
+
+      {collections.length > 0 && (
+        <select
+          className="select small"
+          aria-label="保存到收藏夹"
+          value={collectionId ?? ''}
+          onChange={(e) =>
+            onCollectionChange(e.target.value === '' ? null : Number(e.target.value))
+          }
+        >
+          <option value="">无收藏夹</option>
+          {collections.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   )
 }

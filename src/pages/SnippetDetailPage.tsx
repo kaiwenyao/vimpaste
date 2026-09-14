@@ -45,7 +45,7 @@ export interface SnippetDetailPageProps {
 
 /**
  * 条目详情页：展示一条已保存片段的完整元信息（类型、语言、统计、时间、标签、
- * 集合、同步状态）与全文，以及恢复到编辑器 / 复制 / 置顶 / 删除操作。
+ * 收藏夹、同步状态）与全文，以及恢复到编辑器 / 复制 / 置顶 / 删除操作。
  */
 export function SnippetDetailPage({
   entry,
@@ -180,7 +180,7 @@ export function SnippetDetailPage({
           <InfoRow label="备注">
             {entry.note ? <span className="detail-note">{entry.note}</span> : '无'}
           </InfoRow>
-          <InfoRow label="集合">{collection ? collection.name : '无'}</InfoRow>
+          <InfoRow label="收藏夹">{collection ? collection.name : '无'}</InfoRow>
           <InfoRow label="置顶">{entry.pinned ? '是' : '否'}</InfoRow>
           <InfoRow label="同步状态">
             {entry.localOnly && <IconLock size={11} />} {syncLabel(entry)}

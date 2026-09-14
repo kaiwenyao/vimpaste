@@ -28,7 +28,7 @@ export interface Snippet extends HistoryEntry {
   pinned?: boolean
   /** 仅本地：永不离开浏览器（plan-v2-accounts.md §7.4） */
   localOnly?: boolean
-  /** 云端集合 id；匿名条目恒为 undefined */
+  /** 云端收藏夹 id；匿名条目恒为 undefined */
   collectionId?: number | null
   tags?: string[]
   /** 软删除墓碑（epoch ms）：云端路径删除的传播标记 */
