@@ -132,6 +132,18 @@ describe.skipIf(!dbUp)('Snippet API', () => {
     expect(rows[0].deletedAt).not.toBeNull()
   })
 
+  it('无 body 的 DELETE 带 Content-Type: application/json 也成功（浏览器 fetch 的真实行为）', async () => {
+    await createAs(alice.cookie)
+    // 与收藏夹删除同一回归：无 body 的 DELETE 一旦声明 application/json，
+    // 默认解析器按空 JSON 解析直接抛 400「请求无法处理」
+    const del = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/snippets/${uuid(1)}`,
+      headers: { cookie: alice.cookie, 'content-type': 'application/json' },
+    })
+    expect(del.statusCode).toBe(200)
+  })
+
   it('A 用户拿不到 B 用户的条目（列表 / 单条 / PATCH / DELETE 全路径）', async () => {
     await createAs(alice.cookie)
 

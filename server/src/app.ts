@@ -59,6 +59,21 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(cookie)
   await app.register(rateLimit, { global: false })
 
+  // JSON 解析器：空 body（content-length: 0）不算错误——浏览器 fetch 对无 body 的
+  // DELETE 也会带上 Content-Type: application/json，默认解析器会因此抛
+  // FST_ERR_CTP_EMPTY_JSON_BODY（400），把删除收藏夹 / 删除片段一并堵死。
+  // 空 body 交给路由（request.body 为 undefined）；坏 JSON 仍按 400 处理。
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const raw = body.toString('utf8')
+    if (raw === '') return done(null, undefined)
+    try {
+      done(null, JSON.parse(raw))
+    } catch (err) {
+      ;(err as Error & { statusCode?: number }).statusCode = 400
+      done(err as Error)
+    }
+  })
+
   registerSecurityHooks(app, prisma, env.SESSION_SECRET)
 
   // 统一错误信封：zod 校验失败 → 400（只回字段路径，不回显输入）；
