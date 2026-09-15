@@ -119,9 +119,9 @@ export function localStoreAfterLogout(): LocalSnippetStore {
   return new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
 }
 
-/** 匿名本地历史条数（登录对话框的合并向导文案用） */
+/** 匿名本地历史条数（登录对话框的合并向导文案用）：墓碑不算可上传条目 */
 export function countLocalHistory(): number {
-  return loadSnippetsFrom(LOCAL_SNIPPET_STORAGE).length
+  return loadSnippetsFrom(LOCAL_SNIPPET_STORAGE).filter((s) => s.deletedAt == null).length
 }
 
 export { MAX_LOCAL_SNIPPETS }

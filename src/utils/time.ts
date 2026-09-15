@@ -30,6 +30,34 @@ export function historyGroupLabel(ts: number, now = Date.now()): string {
   return '更早'
 }
 
+/** 分组标题的英文副标：中文标题本身是稳定的可访问文本，英文只作装饰 */
+export const HISTORY_GROUP_EN: Record<string, string> = {
+  今天: 'Today',
+  昨天: 'Yesterday',
+  '7 天内': 'This week',
+  '30 天内': 'This month',
+  更早: 'Earlier',
+}
+
+/**
+ * 按时间分组（片段库按更新时间、回收站按删除时间共用这一份规则）。
+ * 要求输入已按时间倒序：连续相同标签归为一组，因此返回的组内也保持原序。
+ */
+export function groupByHistoryLabel<T>(
+  items: readonly T[],
+  at: (item: T) => number,
+  now = Date.now(),
+): { label: string; items: T[] }[] {
+  const groups: { label: string; items: T[] }[] = []
+  for (const item of items) {
+    const label = historyGroupLabel(at(item), now)
+    const last = groups[groups.length - 1]
+    if (last && last.label === label) last.items.push(item)
+    else groups.push({ label, items: [item] })
+  }
+  return groups
+}
+
 /** 绝对时间：详情页等需要精确时刻的场景（2026 年 9 月 5 日 14:30） */
 export function formatFullTime(ts: number): string {
   const d = new Date(ts)

@@ -17,7 +17,7 @@ import type { EditorMode } from './editor/editorMode'
 import { jumpToPlaceholder } from './editor/navigation'
 import type { CloudSession } from './cloud/session'
 import type { SyncStatus } from './cloud/sync'
-import type { ApiCollection, CollectionPatch } from './cloud/api'
+import type { ApiCollection, ApiSnippet, CollectionPatch } from './cloud/api'
 import { countByCollection, planCollectionMove } from './utils/collections'
 import type { Snippet, SnippetKind } from './storage/snippets'
 import {
@@ -26,15 +26,19 @@ import {
   MAX_TAG_CHARS,
   SNIPPET_NOTE_MAX_CHARS,
   SNIPPET_TITLE_MAX_CHARS,
+  TRASH_RETENTION_DAYS,
+  trashedSnippets,
 } from './storage/snippets'
 import { LocalSnippetStore } from './storage/SnippetStore'
 import type { SnippetStore } from './storage/SnippetStore'
 import { loadPrefs, savePrefs } from './storage/prefs'
 import { createHistoryId, deriveTitle } from './storage/history'
-import { SAVED_PATH, navigate, useHashRoute } from './router'
+import { SAVED_PATH, TRASH_PATH, navigate, useHashRoute } from './router'
 import { SavedPage } from './pages/SavedPage'
 import type { SnippetKindFilter } from './pages/SavedPage'
 import { SnippetDetailPage } from './pages/SnippetDetailPage'
+import { TrashPage } from './pages/TrashPage'
+import { mergeTrashEntries } from './utils/trash'
 import { isThemeId } from './theme/themes'
 import type { ThemeId } from './theme/themes'
 import { copyText } from './utils/clipboard'
@@ -127,6 +131,23 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [collections, setCollections] = useState<ApiCollection[]>([])
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null)
+  /** 本地墓碑（未登录时的回收站内容；登录后是「还没送达服务端」的那些） */
+  const [trashedLocal, setTrashedLocal] = useState<Snippet[]>(() =>
+    trashedSnippets(store.current()),
+  )
+  /** 登录模式下服务端回收站（权威列表 + 服务端保留天数） */
+  const [serverTrash, setServerTrash] = useState<{
+    items: ApiSnippet[]
+    retentionDays: number
+  } | null>(null)
+  const [trashError, setTrashError] = useState<string | null>(null)
+  /**
+   * 仍存活且标为「仅本地」的条目 id：服务端上它们只剩墓碑（其它设备的删除信号），
+   * 但本机没删它们，因此不进回收站。
+   */
+  const [localOnlyAliveIds, setLocalOnlyAliveIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  )
   const [varValues, setVarValues] = useState<Record<string, string>>({})
   /** 有未保存修改时的继续动作：确认对话框背后的那一步（打开条目 / 新建…） */
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
@@ -172,11 +193,18 @@ export default function App() {
     collectionsRef.current = collections
   }, [collections])
 
-  // store 换绑（登录 / 登出）或条目变化：同步快照到 React 状态（墓碑不进 UI）
+  // store 换绑（登录 / 登出）或条目变化：同步快照到 React 状态（墓碑不进片段库列表）
   useEffect(() => {
+    // 打开应用 / 换绑 store 时先清掉到期墓碑：本地路径没有定时任务，
+    // 惰性清理是「30 天后自动删除」在本地的落地方式（服务端另有每日硬删任务）
+    store.purgeExpired()
     const apply = (list: Snippet[]) => {
       libraryRef.current = alive(list)
       setLibrary(libraryRef.current)
+      setTrashedLocal(trashedSnippets(list))
+      setLocalOnlyAliveIds(
+        new Set(list.filter((s) => s.localOnly === true && s.deletedAt == null).map((s) => s.id)),
+      )
     }
     apply(store.current())
     return store.subscribe(apply)
@@ -500,8 +528,9 @@ export default function App() {
   }, [resetNewMeta])
 
   const handleDeleteEntry = useCallback((id: string) => {
-    // 云端模式：remove 触发 onRemove 钩子 → 入队软删除（墓碑由服务端传播）
-    storeRef.current.remove(id)
+    // 删除进回收站（30 天内可恢复），不再立即消失。
+    // 云端模式：store 的写透钩子会把这次删除入队，由同步引擎在服务端写墓碑
+    storeRef.current.trash(id)
     if (activeEntryIdRef.current === id) {
       activeEntryIdRef.current = null
       setActiveEntryId(null)
@@ -518,18 +547,108 @@ export default function App() {
   )
 
   const handleClearHistory = useCallback(() => {
-    const session = sessionRef.current
-    if (session) {
-      // 云端模式：清空 = 全部软删除（仅本地条目直接丢弃，不惊动服务器）
-      for (const s of libraryRef.current) {
-        if (!s.localOnly) session.engine.enqueueDelete(s.id)
-      }
-    }
-    storeRef.current.replaceAll([])
+    // 清空片段库 = 全部进回收站（30 天内可恢复），不再直接抹掉内容。
+    // 仅本地条目也在本地入回收站，但不会因此被推上服务器（store 不对 localOnly 触发删除钩子）
+    storeRef.current.trashMany(libraryRef.current.map((s) => s.id))
     activeEntryIdRef.current = null
     setActiveEntryId(null)
     resetNewMeta()
   }, [resetNewMeta])
+
+  /** 重新拉取服务端回收站（未登录时无事可做：本地回收站是同步读的） */
+  const refreshTrash = useCallback(() => {
+    if (cloudUser === null) return
+    void (async () => {
+      try {
+        const { cloudApi } = await import('./cloud/api')
+        const result = await cloudApi.trash()
+        setServerTrash(result)
+        setTrashError(null)
+      } catch {
+        // 拉不到就实话实说：不把空列表当成「回收站是空的」
+        setTrashError('回收站加载失败，请检查网络后重试')
+      }
+    })()
+  }, [cloudUser])
+
+  /** 恢复：云端先请服务端清墓碑（失败要看得见），未登录直接本地恢复 */
+  const handleRestoreFromTrash = useCallback(
+    (id: string) => {
+      const session = sessionRef.current
+      if (session) {
+        void (async () => {
+          try {
+            await session.engine.restoreFromTrash(id)
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : '恢复失败，请稍后重试', 'err')
+            return
+          }
+          refreshTrash()
+          showToast('已恢复到片段库', 'ok')
+        })()
+        return
+      }
+      storeRef.current.restore(id)
+      showToast('已恢复到片段库', 'ok')
+    },
+    [refreshTrash, showToast],
+  )
+
+  /** 彻底删除：不可恢复，云端要求服务端立即物理删除 */
+  const handlePurgeFromTrash = useCallback(
+    (id: string) => {
+      const session = sessionRef.current
+      void (async () => {
+        if (session) {
+          try {
+            await session.engine.purgeFromTrash(id)
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : '彻底删除失败，请稍后重试', 'err')
+            return
+          }
+        }
+        storeRef.current.purge(id)
+        refreshTrash()
+        showToast('已彻底删除', 'ok')
+      })()
+    },
+    [refreshTrash, showToast],
+  )
+
+  const handleEmptyTrash = useCallback(() => {
+    const session = sessionRef.current
+    void (async () => {
+      if (session) {
+        try {
+          await session.engine.emptyTrashRemote()
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : '清空失败，请稍后重试', 'err')
+          return
+        }
+      }
+      storeRef.current.emptyTrash()
+      refreshTrash()
+      showToast('回收站已清空', 'ok')
+    })()
+  }, [refreshTrash, showToast])
+
+  // 进入回收站页面：登录模式下拉取服务端墓碑（本地模式直接读 store，不发请求）
+  useEffect(() => {
+    if (route.view !== 'trash' || cloudUser === null) return
+    refreshTrash()
+  }, [route.view, cloudUser, refreshTrash])
+
+  /**
+   * 登录 / 恢复会话后、以及每次同步完成后刷新服务端回收站。
+   * 不刷新的话角标会说谎：本地墓碑在服务端确认删除后会被同步引擎从缓存里清掉，
+   * 只算本地墓碑会让「回收站里有 2 条」显示成 0；另一台设备删的条目也不会出现。
+   * 同步失败（paused）时不拉，避免断网时白发请求。
+   */
+  useEffect(() => {
+    if (cloudUser === null || syncStatus.state === 'syncing' || syncStatus.state === 'paused')
+      return
+    refreshTrash()
+  }, [cloudUser, syncStatus.state, refreshTrash])
 
   const handleNewPaste = useCallback(() => {
     guardUnsaved(() => {
@@ -775,6 +894,9 @@ export default function App() {
       setSyncStatus(session.engine.currentStatus())
       setStore(session.store)
       setCollections(nextCollections)
+      // 换账号登录：上一个账号的回收站绝不能留在界面上
+      setServerTrash(null)
+      setTrashError(null)
     },
     [],
   )
@@ -788,6 +910,9 @@ export default function App() {
     setCollections([])
     setActiveCollectionId(null)
     setSyncStatus({ state: 'idle', lastSyncAt: null })
+    // 服务端回收站列表属于上一个账号，登出即清掉
+    setServerTrash(null)
+    setTrashError(null)
     if (session) await session.destroy()
     const { localStoreAfterLogout } = await import('./cloud/session')
     setStore(localStoreAfterLogout())
@@ -886,6 +1011,22 @@ export default function App() {
   // 收藏夹计数按全集算（不随当前筛选变化）：面板上的数字必须是「里面有多少条」
   const collectionCounts = useMemo(() => countByCollection(library), [library])
 
+  /**
+   * 回收站列表：未登录时全部来自本地墓碑；登录时以服务端墓碑为准，
+   * 再并上本地还没送达服务端的那些（离线删的条目服务端根本不知道）。
+   */
+  const trashEntries = useMemo(
+    () =>
+      mergeTrashEntries(
+        trashedLocal,
+        cloudUser !== null ? (serverTrash?.items ?? null) : null,
+        localOnlyAliveIds,
+      ),
+    [trashedLocal, serverTrash, cloudUser, localOnlyAliveIds],
+  )
+  // 保留天数取服务端配置（自托管可改 TOMBSTONE_RETENTION_DAYS），未登录用同一个默认值
+  const trashRetentionDays = serverTrash?.retentionDays ?? TRASH_RETENTION_DAYS
+
   const cloudStatusView: CloudStatusView | undefined =
     import.meta.env.VITE_CLOUD_ENABLED === 'true'
       ? {
@@ -933,6 +1074,8 @@ export default function App() {
       onDeleteCollection={handleDeleteCollection}
       onMoveCollection={handleMoveCollection}
       onMoveEntry={handleCollectionChange}
+      onOpenTrash={() => navigate(TRASH_PATH)}
+      trashCount={trashEntries.length}
     />
   )
 
@@ -1090,6 +1233,19 @@ export default function App() {
       </div>
 
       {route.view === 'saved' && savedPage}
+
+      {route.view === 'trash' && (
+        <TrashPage
+          entries={trashEntries}
+          retentionDays={trashRetentionDays}
+          loadError={cloudUser !== null ? trashError : null}
+          onRefresh={cloudUser !== null ? refreshTrash : undefined}
+          onBack={() => navigate(SAVED_PATH)}
+          onRestore={handleRestoreFromTrash}
+          onPurge={handlePurgeFromTrash}
+          onEmptyTrash={handleEmptyTrash}
+        />
+      )}
 
       {route.view === 'detail' &&
         (detailEntry !== null ? (

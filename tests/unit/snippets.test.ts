@@ -4,12 +4,21 @@ import {
   LOCAL_STORAGE_KEY,
   MAX_CACHED_SNIPPETS,
   MAX_LOCAL_SNIPPETS,
+  TRASH_RETENTION_DAYS,
+  dropSnippets,
+  isTrashed,
   loadSnippetsFrom,
   LOCAL_SNIPPET_STORAGE,
   cloudCacheStorage,
+  markRestored,
+  markTrashed,
   migrateV1ToV2,
+  purgeExpiredTombstones,
   sanitizeSnippet,
   saveSnippetsTo,
+  splitByTrash,
+  trashDaysLeft,
+  trashedSnippets,
   upsertSnippet,
 } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
@@ -170,5 +179,105 @@ describe('云端缓存（vimpaste.snippets.v2.<userId>，500 条）', () => {
     expect(loaded).toHaveLength(MAX_CACHED_SNIPPETS)
     expect(loaded[0].kind).toBe('prompt')
     expect(loaded[0].pinned).toBe(true)
+  })
+})
+
+describe('回收站：墓碑保留 30 天（本地路径与 v1 键共用同一份存储）', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('删除后条目仍在 localStorage 里，且 deletedAt 非空、内容一字不少', () => {
+    const now = Date.now()
+    const list = markTrashed(
+      [snippet({ id: 'a', content: 'curl -sfL https://get.k3s.io | sh -' })],
+      'a',
+      now,
+    )
+    saveSnippetsTo(LOCAL_SNIPPET_STORAGE, list)
+
+    const raw = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]')
+    expect(raw).toHaveLength(1)
+    expect(raw[0]).toMatchObject({ id: 'a', deletedAt: now })
+    expect(raw[0].content).toBe('curl -sfL https://get.k3s.io | sh -')
+
+    // 读回来仍是墓碑：active 视图为空，回收站视图有 1 条
+    const loaded = loadSnippetsFrom(LOCAL_SNIPPET_STORAGE)
+    expect(loaded.filter((s) => !isTrashed(s))).toHaveLength(0)
+    expect(trashedSnippets(loaded).map((s) => s.id)).toEqual(['a'])
+  })
+
+  it('超过 30 天的墓碑在加载时被清除，未到期的原样保留', () => {
+    const now = Date.now()
+    saveSnippetsTo(LOCAL_SNIPPET_STORAGE, [
+      { ...snippet({ id: 'fresh' }), deletedAt: now - 1 * DAY },
+      { ...snippet({ id: 'just-30d' }), deletedAt: now - TRASH_RETENTION_DAYS * DAY },
+      { ...snippet({ id: 'expired' }), deletedAt: now - 31 * DAY },
+    ])
+    const loaded = loadSnippetsFrom(LOCAL_SNIPPET_STORAGE)
+    // 满 30 天即到期（>=），31 天前的更留不住
+    expect(loaded.map((s) => s.id)).toEqual(['fresh'])
+    expect(purgeExpiredTombstones(loaded, now).map((s) => s.id)).toEqual(['fresh'])
+  })
+
+  it('墓碑不占用 active 的 30 条上限：删满 30 条也不会挤掉在用的条目', () => {
+    const now = Date.now()
+    const active = Array.from({ length: MAX_LOCAL_SNIPPETS }, (_, i) =>
+      snippet({ id: `a${i}`, updatedAt: now - i }),
+    )
+    const tombstones = Array.from({ length: MAX_LOCAL_SNIPPETS }, (_, i) => ({
+      ...snippet({ id: `t${i}`, updatedAt: now - 5000 - i }),
+      deletedAt: now - i,
+    }))
+    saveSnippetsTo(LOCAL_SNIPPET_STORAGE, [...active, ...tombstones])
+
+    const loaded = loadSnippetsFrom(LOCAL_SNIPPET_STORAGE)
+    expect(loaded.filter((s) => !isTrashed(s))).toHaveLength(MAX_LOCAL_SNIPPETS)
+    expect(trashedSnippets(loaded)).toHaveLength(MAX_LOCAL_SNIPPETS)
+    // 磁盘上 60 条：墓碑没有把 active 名额吃掉
+    expect(JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]')).toHaveLength(60)
+  })
+
+  it('恢复后条目回到 active 列表（墓碑清零、置顶）', () => {
+    const now = Date.now()
+    let list = [
+      { ...snippet({ id: 'a' }), deletedAt: now - DAY },
+      snippet({ id: 'b', updatedAt: now }),
+    ]
+    expect(trashedSnippets(list).map((s) => s.id)).toEqual(['a'])
+    list = markRestored(list, 'a', now + 1)
+    expect(list[0].id).toBe('a')
+    expect(list[0].deletedAt).toBeNull()
+    expect(trashedSnippets(list)).toHaveLength(0)
+    expect(list.filter((s) => !isTrashed(s)).map((s) => s.id)).toEqual(['a', 'b'])
+  })
+
+  it('删除是幂等的：重复 trash 不刷新删除时间；markTrashed 不动 updatedAt', () => {
+    const now = Date.now()
+    const original = snippet({ id: 'a' })
+    const once = markTrashed([original], 'a', now)
+    const twice = markTrashed(once, 'a', now + 9999)
+    expect(twice[0].deletedAt).toBe(now)
+    expect(twice[0].updatedAt).toBe(original.updatedAt)
+  })
+
+  it('剩余天数：刚删是 30 天，29 天前删是 1 天，过期是 0', () => {
+    const now = 1_700_000_000_000
+    expect(trashDaysLeft(now, now)).toBe(TRASH_RETENTION_DAYS)
+    expect(trashDaysLeft(now - 29 * DAY, now)).toBe(1)
+    expect(trashDaysLeft(now - 30 * DAY, now)).toBe(0)
+    expect(trashDaysLeft(now - 99 * DAY, now)).toBe(0)
+  })
+
+  it('splitByTrash 分桶：各自截断、墓碑按删除时间倒序、dropSnippets 只删传入的 id', () => {
+    const now = Date.now()
+    const entries = [
+      snippet({ id: 'a', updatedAt: now - 1 }),
+      snippet({ id: 'b', updatedAt: now - 2 }),
+      { ...snippet({ id: 'old-delete' }), deletedAt: now - 2 * DAY },
+      { ...snippet({ id: 'new-delete' }), deletedAt: now - 1 * DAY },
+    ]
+    const { active, trash } = splitByTrash(entries, { maxEntries: 1, maxTrashEntries: 1 }, now)
+    expect(active.map((s) => s.id)).toEqual(['a'])
+    expect(trash.map((s) => s.id)).toEqual(['new-delete'])
+    expect(dropSnippets(entries, ['a']).map((s) => s.id)).toEqual(['b', 'old-delete', 'new-delete'])
   })
 })

@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // 云 API 全部 mock：同步引擎测试不触网（CloudApiError 一并造进 mock，供 404 用例抛出）
 const syncMock = vi.fn()
 const deleteSnippetMock = vi.fn()
+const restoreSnippetMock = vi.fn()
+const purgeSnippetMock = vi.fn()
+const emptyTrashMock = vi.fn()
 vi.mock('../../src/cloud/api', () => {
   class CloudApiError extends Error {
     constructor(
@@ -17,6 +20,9 @@ vi.mock('../../src/cloud/api', () => {
     cloudApi: {
       sync: (...args: unknown[]) => syncMock(...args),
       deleteSnippet: (...args: unknown[]) => deleteSnippetMock(...args),
+      restoreSnippet: (...args: unknown[]) => restoreSnippetMock(...args),
+      purgeSnippet: (...args: unknown[]) => purgeSnippetMock(...args),
+      emptyTrash: (...args: unknown[]) => emptyTrashMock(...args),
     },
     CloudApiError,
   }
@@ -70,6 +76,10 @@ beforeEach(() => {
   syncMock.mockReset()
   deleteSnippetMock.mockReset()
   deleteSnippetMock.mockResolvedValue(undefined)
+  restoreSnippetMock.mockReset()
+  purgeSnippetMock.mockReset()
+  purgeSnippetMock.mockResolvedValue(undefined)
+  emptyTrashMock.mockReset()
 })
 
 describe('同步队列持久化', () => {
@@ -341,5 +351,221 @@ describe('SyncEngine（冲突副本 / 墓碑 / 仅本地 / 防抖推送）', () 
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+/**
+ * 回收站（云端路径）：恢复 / 彻底删除 / 清空。
+ * 这里刻意带写透钩子接线（与 src/cloud/session.ts 一致），因为「恢复会不会被
+ * 队列里的删除再打回去」正是最容易被写出 bug 的地方：恢复必须同时撤下待推删除。
+ */
+describe('SyncEngine 回收站（恢复 / 彻底删除 / 清空）', () => {
+  const ID = '11111111-1111-4111-8111-111111111111'
+  const DELETED_ID = '22222222-2222-4222-8222-222222222222'
+
+  /** 与 session.ts 相同的接线：store 写入自动入队（否则测不到钩子相关的时序） */
+  function makeWiredEngine() {
+    const store = new LocalSnippetStore(cloudCacheStorage(1), {
+      onUpsert: (s) => {
+        if (!engine.remoteWrite) engine.enqueueUpsert(s)
+      },
+      onRemove: (id) => {
+        if (!engine.remoteWrite) engine.enqueueDelete(id)
+      },
+    })
+    const engine = new SyncEngine({ store, onStatus: () => {}, queueKey: QUEUE_KEY })
+    return { store, engine }
+  }
+
+  /** 已同步条目 → 删除进回收站（真实流程：store.trash 写墓碑并触发 enqueueDelete） */
+  function trashSyncedEntry(store: LocalSnippetStore, id = ID) {
+    store.upsert(snippet({ id, syncState: 'synced' }))
+    store.trash(id)
+  }
+
+  it('恢复前先撤下待推删除：防抖窗口内恢复，DELETE 根本不会发出去', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    expect(loadQueue(QUEUE_KEY).deletes).toEqual([ID])
+
+    restoreSnippetMock.mockResolvedValue(apiSnippet({ id: ID, deletedAt: null }))
+    await engine.restoreFromTrash(ID)
+
+    expect(deleteSnippetMock).not.toHaveBeenCalled()
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    // 恢复不是一次上行推送：服务端已经是真相，不需要再推一遍内容
+    expect(loadQueue(QUEUE_KEY).upserts).toHaveLength(0)
+    expect(restoreSnippetMock).toHaveBeenCalledWith(ID)
+
+    const row = store.current().find((s) => s.id === ID)
+    expect(row?.deletedAt).toBeNull()
+    expect(row?.syncState).toBe('synced')
+    engine.stop()
+  })
+
+  it('恢复失败必须抛错（绝不静默吞掉），条目留在回收站等用户重试', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    restoreSnippetMock.mockRejectedValue(new CloudApiError(0, 'NETWORK', '网络不可用'))
+
+    await expect(engine.restoreFromTrash(ID)).rejects.toThrow('网络不可用')
+    // 本地仍是墓碑：UI 才能把它继续显示在回收站里
+    expect(store.current().find((s) => s.id === ID)?.deletedAt).toBeGreaterThan(0)
+    engine.stop()
+  })
+
+  it('服务端没有这条（404）时本地恢复并重新入队：恢复按钮点了就该恢复', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    restoreSnippetMock.mockRejectedValue(new CloudApiError(404, 'NOT_FOUND', '条目不存在'))
+
+    await engine.restoreFromTrash(ID)
+
+    const row = store.current().find((s) => s.id === ID)
+    expect(row?.deletedAt).toBeNull()
+    expect(row?.syncState).toBe('pending')
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    // 重新入队上行，内容不丢
+    expect(loadQueue(QUEUE_KEY).upserts.map((u) => u.id)).toEqual([ID])
+    engine.stop()
+  })
+
+  it('从未推送过的条目（syncState=local）恢复：不发服务端请求，本地恢复 + 入队新建', async () => {
+    const { store, engine } = makeWiredEngine()
+    store.upsert(snippet({ id: ID, syncState: 'local' }))
+    store.trash(ID)
+    localStorage.setItem(QUEUE_KEY, JSON.stringify({ upserts: [], deletes: [], lastSyncAt: null }))
+
+    await engine.restoreFromTrash(ID)
+
+    expect(restoreSnippetMock).not.toHaveBeenCalled()
+    expect(store.current().find((s) => s.id === ID)?.deletedAt).toBeNull()
+    expect(loadQueue(QUEUE_KEY).upserts.map((u) => u.id)).toEqual([ID])
+    engine.stop()
+  })
+
+  it('删除在途期间恢复：DELETE 落地后立刻撤销，条目不会被再删一次', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+
+    let releaseDelete: () => void = () => {}
+    const deleteGate = new Promise<void>((resolve) => {
+      releaseDelete = resolve
+    })
+    deleteSnippetMock.mockImplementation(async () => {
+      await deleteGate
+    })
+    syncMock.mockResolvedValue({ applied: [], conflicts: [], pulled: [], now: Date.now() })
+    restoreSnippetMock.mockResolvedValue(apiSnippet({ id: ID, deletedAt: null }))
+
+    const flush = engine.flush()
+    // 等 DELETE 真正发出去（此时它在途）
+    await vi.waitFor(() => expect(deleteSnippetMock).toHaveBeenCalledWith(ID))
+
+    // 在途期间用户点了恢复：撤下队列 + 登记撤销
+    await engine.restoreFromTrash(ID)
+    expect(restoreSnippetMock).toHaveBeenCalledTimes(1)
+
+    releaseDelete()
+    await flush
+
+    // DELETE 已经落到服务端，收尾时必须再恢复一次把它撤销
+    expect(restoreSnippetMock).toHaveBeenCalledTimes(2)
+    expect(restoreSnippetMock).toHaveBeenLastCalledWith(ID)
+    expect(store.current().find((s) => s.id === ID)?.deletedAt).toBeNull()
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    engine.stop()
+  })
+
+  it('撤下待推删除时按 id 过滤：不会误伤队首的另一条删除', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store, ID)
+    trashSyncedEntry(store, DELETED_ID)
+    expect(loadQueue(QUEUE_KEY).deletes).toEqual([ID, DELETED_ID])
+
+    // 删除第一条在途，期间恢复第二条：队列里第二条不能被当作「已完成」切掉
+    let releaseDelete: () => void = () => {}
+    const deleteGate = new Promise<void>((resolve) => {
+      releaseDelete = resolve
+    })
+    deleteSnippetMock.mockImplementation(async () => {
+      await deleteGate
+    })
+    syncMock.mockResolvedValue({ applied: [], conflicts: [], pulled: [], now: Date.now() })
+    restoreSnippetMock.mockResolvedValue(apiSnippet({ id: DELETED_ID, deletedAt: null }))
+
+    const flush = engine.flush()
+    await vi.waitFor(() => expect(deleteSnippetMock).toHaveBeenCalledWith(ID))
+    await engine.restoreFromTrash(DELETED_ID)
+    releaseDelete()
+    await flush
+
+    // 第一条送达服务端，第二条被恢复撤下——两条都不该留在队列里
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    expect(deleteSnippetMock).toHaveBeenCalledTimes(1)
+    expect(store.current().find((s) => s.id === DELETED_ID)?.deletedAt).toBeNull()
+    engine.stop()
+  })
+
+  it('彻底删除：先撤下队列里的软删除，再请求服务端物理删除', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+
+    await engine.purgeFromTrash(ID)
+
+    expect(purgeSnippetMock).toHaveBeenCalledWith(ID)
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    engine.stop()
+  })
+
+  it('彻底删除时服务端仍当它「在用」（409）：先软删再硬删', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    purgeSnippetMock
+      .mockRejectedValueOnce(new CloudApiError(409, 'NOT_TRASHED', '条目不在回收站中'))
+      .mockResolvedValueOnce(undefined)
+
+    await engine.purgeFromTrash(ID)
+
+    expect(deleteSnippetMock).toHaveBeenCalledWith(ID)
+    expect(purgeSnippetMock).toHaveBeenCalledTimes(2)
+    engine.stop()
+  })
+
+  it('彻底删除时服务端根本没有这条（404）：视为已完成，不报错', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    purgeSnippetMock.mockRejectedValue(new CloudApiError(404, 'NOT_FOUND', '条目不存在'))
+
+    await expect(engine.purgeFromTrash(ID)).resolves.toBeUndefined()
+    engine.stop()
+  })
+
+  it('清空回收站：先把待推删除送达（服务端才视为墓碑），再请求清空', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store, ID)
+    trashSyncedEntry(store, DELETED_ID)
+    emptyTrashMock.mockResolvedValue(2)
+
+    const count = await engine.emptyTrashRemote()
+
+    // 删除必须先送达，否则服务端把它们当「在用」条目而留在库里
+    expect(deleteSnippetMock).toHaveBeenCalledWith(ID)
+    expect(deleteSnippetMock).toHaveBeenCalledWith(DELETED_ID)
+    expect(purgeSnippetMock).not.toHaveBeenCalled()
+    expect(emptyTrashMock).toHaveBeenCalledTimes(1)
+    expect(count).toBe(2)
+    expect(loadQueue(QUEUE_KEY).deletes).toHaveLength(0)
+    engine.stop()
+  })
+
+  it('清空回收站遇到网络故障：抛错给调用方，本地不假装已清空', async () => {
+    const { store, engine } = makeWiredEngine()
+    trashSyncedEntry(store)
+    deleteSnippetMock.mockRejectedValue(new CloudApiError(0, 'NETWORK', '网络不可用'))
+
+    await expect(engine.emptyTrashRemote()).rejects.toThrow('网络不可用')
+    expect(emptyTrashMock).not.toHaveBeenCalled()
+    engine.stop()
   })
 })

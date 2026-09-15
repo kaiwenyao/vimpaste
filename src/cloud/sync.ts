@@ -128,6 +128,12 @@ export class SyncEngine {
   private pendingFlush = false
   /** 引擎自身写入 store（拉取合并 / 冲突副本）时挂起 onUpsert 钩子，防止回环入队 */
   private applyingRemote = false
+  /** 回收站恢复写回本地缓存期间同样挂起钩子（服务端已经是我们写入的样子） */
+  private suppressHooks = false
+  /** 正在途中的删除（已发出 DELETE、还没拿到响应） */
+  private readonly inFlightDeletes = new Set<string>()
+  /** 在途删除期间用户点了「恢复」：DELETE 落地后要立刻撤销（否则条目又被删一次） */
+  private readonly undoAfterDelete = new Set<string>()
 
   constructor(private readonly opts: SyncEngineOptions) {
     this.queue = loadQueue(opts.queueKey)
@@ -135,7 +141,7 @@ export class SyncEngine {
 
   /** 引擎写 store 期间为 true；store 的 onUpsert 钩子据此避免把拉取结果再入队 */
   get remoteWrite(): boolean {
-    return this.applyingRemote
+    return this.applyingRemote || this.suppressHooks
   }
 
   currentStatus(): SyncStatus {
@@ -309,18 +315,112 @@ export class SyncEngine {
     const deleted: string[] = []
     while (this.queue.deletes.length > 0) {
       const id = this.queue.deletes[0]
+      this.inFlightDeletes.add(id)
       try {
         await cloudApi.deleteSnippet(id)
       } catch (error) {
         // 404 = 服务端从未见过该条目（离线新建后、尚未推送就被删除）：视同已删除。
         // 若当作失败重试，这条 404 会永远堵在队列头，整个同步停摆。
         if (!(error instanceof CloudApiError && error.status === 404)) throw error
+      } finally {
+        this.inFlightDeletes.delete(id)
       }
-      this.queue.deletes = this.queue.deletes.slice(1)
-      deleted.push(id)
+      // 按 id 过滤而不是 slice(1)：请求在途期间用户可能点了「恢复」，队列已被改写，
+      // 盲目切首位会把另一条待推删除误当作已完成
+      this.queue.deletes = this.queue.deletes.filter((d) => d !== id)
+      if (this.undoAfterDelete.delete(id)) {
+        // 删除在途时用户点了「恢复」：这次 DELETE 已经落到服务端，立刻撤销。
+        // 撤销失败不抛错——本地条目仍在回收站里，用户可以再点一次恢复
+        try {
+          await cloudApi.restoreSnippet(id)
+        } catch {
+          /* 本地仍是墓碑，用户可重试 */
+        }
+      } else {
+        deleted.push(id)
+      }
       saveQueue(this.opts.queueKey, this.queue)
     }
     return deleted
+  }
+
+  /**
+   * 从回收站恢复（云端）：撤下待推删除 → 请服务端清墓碑 → 写回本地缓存。
+   *
+   * 失败一律抛给调用方（UI 弹错误）——静默吞掉会让用户以为恢复了，
+   * 下一轮同步却把墓碑再拉回来，条目「恢复后又不见了」。
+   */
+  async restoreFromTrash(id: string): Promise<void> {
+    const local = this.opts.store.current().find((s) => s.id === id)
+    // 1) 待推删除先撤下来：否则恢复成功后，队列里的 DELETE 会把墓碑再打回去
+    this.queue.deletes = this.queue.deletes.filter((d) => d !== id)
+    this.queue.upserts = this.queue.upserts.filter((s) => s.id !== id)
+    saveQueue(this.opts.queueKey, this.queue)
+    // 2) 删除可能正在途中（flush 已发出请求）：登记，让 pushDeletes 在响应回来后撤销
+    if (this.inFlightDeletes.has(id)) this.undoAfterDelete.add(id)
+
+    // 服务端从未见过这条（离线新建后在防抖窗口内被删）：本地恢复 + 入队新建即可
+    if (local && local.syncState !== 'local') {
+      try {
+        const row = await cloudApi.restoreSnippet(id)
+        this.writeRemote(serverToLocal(row))
+        return
+      } catch (error) {
+        // 404 = 服务端没有这条（墓碑已被 30 天任务清掉，或从未推送成功）：
+        // 继续往下走，本地恢复并重新入队——点了恢复就该恢复，绝不丢字
+        if (!(error instanceof CloudApiError && error.status === 404)) throw error
+      }
+    }
+    this.restoreLocally(local)
+  }
+
+  /** 本地恢复并重新入队（服务端没有这条时走正常 onUpsert 钩子上行） */
+  private restoreLocally(local: Snippet | undefined): void {
+    if (!local) throw new CloudApiError(404, 'NOT_FOUND', '条目不存在')
+    this.opts.store.upsert({
+      ...local,
+      deletedAt: null,
+      updatedAt: Date.now(),
+      syncState: local.localOnly ? 'local' : 'pending',
+    })
+  }
+
+  /** 写本地缓存但不再入队（服务端已经是我们写入的样子） */
+  private writeRemote(snippet: Snippet): void {
+    this.suppressHooks = true
+    try {
+      this.opts.store.upsert(snippet)
+    } finally {
+      this.suppressHooks = false
+    }
+  }
+
+  /**
+   * 彻底删除（云端）：撤下队列里的软删除，再请服务端物理删除。
+   * 服务端还把它当在用条目（删除还在防抖窗口里）时先软删再硬删；
+   * 404 表示服务端根本没有这条（离线新建后删除），本地清掉即可。
+   */
+  async purgeFromTrash(id: string): Promise<void> {
+    this.queue.deletes = this.queue.deletes.filter((d) => d !== id)
+    this.queue.upserts = this.queue.upserts.filter((s) => s.id !== id)
+    saveQueue(this.opts.queueKey, this.queue)
+    try {
+      await cloudApi.purgeSnippet(id)
+    } catch (error) {
+      if (error instanceof CloudApiError && error.status === 404) return
+      if (error instanceof CloudApiError && error.status === 409) {
+        await cloudApi.deleteSnippet(id)
+        await cloudApi.purgeSnippet(id)
+        return
+      }
+      throw error
+    }
+  }
+
+  /** 清空回收站（云端）：先把待推删除送达，服务端此时才把它们视为墓碑 */
+  async emptyTrashRemote(): Promise<number> {
+    await this.pushDeletes()
+    return cloudApi.emptyTrash()
   }
 
   private scheduleRetry(): void {
