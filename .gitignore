@@ -18,3 +18,6 @@ blob-report/
 
 # 本地环境变量（含数据库口令）
 server/.env
+
+# pi goal-x 扩展的项目级目标状态（本机会话产物）
+.pi/
