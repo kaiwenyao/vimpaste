@@ -215,3 +215,39 @@ export function IconSync(props: IconProps) {
     </svg>
   )
 }
+
+/** 收藏夹：开口文件夹，用于「移动到收藏夹」入口 */
+export function IconFolder(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2l2 2.4h7.8A2.5 2.5 0 0 1 21 9.9v7.6A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
+    </svg>
+  )
+}
+
+/** 编辑收藏夹（名称与颜色） */
+export function IconPencil(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+      <path d="m13.5 5.5 4 4" />
+    </svg>
+  )
+}
+
+/** 排序：上移 / 下移（收藏夹面板的 order 调整） */
+export function IconArrowUp(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 20V5M6 11l6-6 6 6" />
+    </svg>
+  )
+}
+
+export function IconArrowDown(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4v15M6 13l6 6 6-6" />
+    </svg>
+  )
+}

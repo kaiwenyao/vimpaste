@@ -102,6 +102,60 @@ describe.skipIf(!dbUp)('Collections & Tags', () => {
     expect(list.json().data[0].name).toBe('default')
   })
 
+  it('PATCH 支持只改颜色 / 只改排序，列表按 (order, id) 返回', async () => {
+    const make = async (name: string) => {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/collections',
+        headers: { cookie: alice.cookie },
+        payload: { name },
+      })
+      return res.json().data.id as number
+    }
+    const first = await make('A')
+    const second = await make('B')
+
+    // 前端「改颜色」只发 color（省略 name 不得被当作清空）
+    const patchColor = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/collections/${first}`,
+      headers: { cookie: alice.cookie },
+      payload: { color: '#7d9463' },
+    })
+    expect(patchColor.statusCode).toBe(200)
+    expect(patchColor.json().data).toMatchObject({ name: 'A', color: '#7d9463' })
+
+    // 非法色值必须拒绝：前端调色板只会发 #RRGGBB
+    const badColor = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/collections/${first}`,
+      headers: { cookie: alice.cookie },
+      payload: { color: '#abc' },
+    })
+    expect(badColor.statusCode).toBe(400)
+
+    // 前端「下移」＝ 两条换序：B 排到 A 前面
+    for (const [id, order] of [
+      [second, 0],
+      [first, 1],
+    ] as const) {
+      const res = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/collections/${id}`,
+        headers: { cookie: alice.cookie },
+        payload: { order },
+      })
+      expect(res.statusCode).toBe(200)
+    }
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/collections',
+      headers: { cookie: alice.cookie },
+    })
+    // B 排到 A 前面（列表只按 order 返回；此处没走过空的 GET，因此没有懒创建 default）
+    expect(list.json().data.map((c: { name: string }) => c.name)).toEqual(['B', 'A'])
+  })
+
   it('删除收藏夹时条目保留（collectionId 置空，SetNull）', async () => {
     const created = await ctx.app.inject({
       method: 'POST',

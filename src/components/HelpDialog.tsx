@@ -20,7 +20,16 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function HelpDialog({
+  open,
+  onClose,
+  cloudMode = false,
+}: {
+  open: boolean
+  onClose: () => void
+  /** 自托管登录版才显示收藏夹说明：匿名版根本没有收藏夹这回事 */
+  cloudMode?: boolean
+}) {
   return (
     <Dialog open={open} onClose={onClose} title="快捷键与使用帮助" closeLabel="关闭帮助">
       <Section title="核心流程">
@@ -64,6 +73,18 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
           普通编辑器模式下按系统标准行为处理按键。浏览器刷新、关闭标签页等系统快捷键不受影响。
         </p>
       </Section>
+      {cloudMode && (
+        <Section title="收藏夹（自托管登录版）">
+          <Row keys="片段库 · 文件夹图标" desc="把条目移动到收藏夹（也可以移回「未分类」）" />
+          <Row keys="详情页 · 所属收藏夹" desc="下拉直接改归属，选「＋ 新建收藏夹…」可现建现用" />
+          <Row keys="片段库 · 收藏夹面板" desc="点名称筛选；点铅笔改名、换颜色、上下移排序、删除" />
+          <p className="help-note">
+            每个条目只属于一个收藏夹；面板上的数字是各收藏夹里的条目数。删除收藏夹不会删掉片段，
+            它们只会变成「未分类」。default 是系统收藏夹（新片段的默认落点），不能重命名或删除，
+            但可以换颜色和调整顺序。
+          </p>
+        </Section>
+      )}
       <Section title="隐私">
         <div className="help-privacy">
           <span className="help-privacy-mark" aria-hidden="true">

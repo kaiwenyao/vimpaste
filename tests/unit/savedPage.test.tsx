@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SavedPage } from '../../src/pages/SavedPage'
 import { SnippetDetailPage } from '../../src/pages/SnippetDetailPage'
 import type { Snippet } from '../../src/storage/snippets'
+import type { ApiCollection } from '../../src/cloud/api'
 
 const NOW = Date.now()
 const CONTENT = "curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_TOKEN' sh -s -"
@@ -21,6 +22,7 @@ function snippet(overrides: Partial<Snippet> = {}): Snippet {
     localOnly: overrides.localOnly,
     note: overrides.note,
     tags: overrides.tags,
+    collectionId: overrides.collectionId,
     syncState: overrides.syncState ?? 'local',
   }
 }
@@ -218,6 +220,260 @@ describe('SavedPage（已保存片段库）', () => {
   })
 })
 
+describe('SavedPage（收藏夹管理，云端模式）', () => {
+  const COLLECTIONS: ApiCollection[] = [
+    { id: 1, name: 'work', color: '#3f8f7d', order: 0 },
+    { id: 2, name: '笔记', color: '#5a7fb8', order: 1 },
+  ]
+
+  function renderCloudPage(overrides: Partial<Parameters<typeof SavedPage>[0]> = {}) {
+    const props = {
+      cloudMode: true,
+      collections: COLLECTIONS,
+      activeCollectionId: null,
+      onSelectCollection: vi.fn(),
+      collectionCounts: { 1: 3, 2: 0 },
+      totalCount: 4,
+      onCreateCollection: vi.fn(
+        async (name: string, color: string): Promise<ApiCollection | null> => ({
+          id: 9,
+          name,
+          color,
+          order: 2,
+        }),
+      ),
+      onUpdateCollection: vi.fn(async () => {}),
+      onDeleteCollection: vi.fn(async () => {}),
+      onMoveCollection: vi.fn(async () => {}),
+      onMoveEntry: vi.fn(),
+      ...overrides,
+    }
+    const view = renderSavedPage(props)
+    return { ...props, view }
+  }
+
+  it('面板列出全部收藏夹与各自条目数，点击行触发筛选', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    const panel = screen.getByRole('region', { name: '收藏夹' })
+    expect(within(panel).getByRole('button', { name: /全部收藏夹/ })).toBeInTheDocument()
+    expect(within(panel).getByText('4')).toBeInTheDocument()
+    const workRow = within(panel).getByRole('button', { name: /^work/ })
+    expect(within(workRow).getByText('3')).toBeInTheDocument()
+    const noteRow = within(panel).getByRole('button', { name: /^笔记/ })
+    expect(within(noteRow).getByText('0')).toBeInTheDocument()
+    // 颜色圆点按用户数据渲染色值（不走主题令牌）
+    expect(workRow.querySelector('.collection-dot')).not.toBeNull()
+
+    await user.click(workRow)
+    expect(props.onSelectCollection).toHaveBeenCalledWith(1)
+    await user.click(within(panel).getByRole('button', { name: /全部收藏夹/ }))
+    expect(props.onSelectCollection).toHaveBeenLastCalledWith(null)
+  })
+
+  it('未登录时不出现收藏夹面板', () => {
+    renderSavedPage()
+    expect(screen.queryByRole('region', { name: '收藏夹' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /移动到收藏夹/ })).toBeNull()
+  })
+
+  it('新建收藏夹：对话框里填名称与颜色后提交', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: /新建收藏夹/ }))
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.type(within(dialog).getByRole('textbox', { name: '名称' }), '  临时  ')
+    await user.click(within(dialog).getByRole('radio', { name: '鼠尾草' }))
+    await user.click(within(dialog).getByRole('button', { name: '创建' }))
+    expect(props.onCreateCollection).toHaveBeenCalledWith('临时', '#7d9463')
+    // 成功后对话框自行收起
+    expect(screen.queryByRole('dialog', { name: '新建收藏夹' })).toBeNull()
+  })
+
+  it('新建收藏夹：重名等失败就地报错且对话框不关闭', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({
+      onCreateCollection: vi.fn(async () => {
+        throw new Error('同名收藏夹已存在')
+      }),
+    })
+    await user.click(screen.getByRole('button', { name: /新建收藏夹/ }))
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.type(within(dialog).getByRole('textbox', { name: '名称' }), 'work')
+    await user.click(within(dialog).getByRole('button', { name: '创建' }))
+    expect(props.onCreateCollection).toHaveBeenCalledTimes(1)
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('同名收藏夹已存在')
+    expect(screen.getByRole('dialog', { name: '新建收藏夹' })).toBeInTheDocument()
+  })
+
+  it('新建收藏夹：名称为空时不发请求，就地提示', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: /新建收藏夹/ }))
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.click(within(dialog).getByRole('button', { name: '创建' }))
+    expect(props.onCreateCollection).not.toHaveBeenCalled()
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('收藏夹名称不能为空')
+  })
+
+  it('新建收藏夹：在名称框里按 Enter 即可提交（键盘可达）', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: /新建收藏夹/ }))
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.type(within(dialog).getByRole('textbox', { name: '名称' }), 'k8s{Enter}')
+    expect(props.onCreateCollection).toHaveBeenCalledWith('k8s', expect.any(String))
+  })
+
+  it('行内浮层：打开后焦点落在第一项，Enter 即选定', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({ entries: [snippet({ title: 'kubectl get nodes' })] })
+    await user.click(screen.getByRole('button', { name: '移动「kubectl get nodes」到收藏夹' }))
+    // 浮层打开时焦点已送入第一项（未分类）
+    expect(screen.getByRole('button', { name: '未分类' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(props.onMoveEntry).toHaveBeenCalledWith('e1', null)
+  })
+
+  it('编辑收藏夹：改名称与颜色后 PATCH', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「work」' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑收藏夹「work」' })
+    const input = within(dialog).getByRole('textbox', { name: '名称' })
+    expect(input).toHaveValue('work')
+    await user.clear(input)
+    await user.type(input, '工作')
+    await user.click(within(dialog).getByRole('radio', { name: '玫瑰' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(props.onUpdateCollection).toHaveBeenCalledWith(1, { name: '工作', color: '#c06a86' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('编辑收藏夹：没有任何改动时保存不发请求', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「work」' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑收藏夹「work」' })
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(props.onUpdateCollection).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('排序：上移/下移触发回调，边界上按钮置灰', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「笔记」' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑收藏夹「笔记」' })
+    // 笔记 order=1 在最后：不能再下移
+    expect(within(dialog).getByRole('button', { name: '下移收藏夹「笔记」' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: '上移收藏夹「笔记」' }))
+    expect(props.onMoveCollection).toHaveBeenCalledWith(2, -1)
+  })
+
+  it('删除收藏夹：二次确认说明会影响到多少条片段，取消则不动', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「work」' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '编辑收藏夹「work」' })).getByRole('button', {
+        name: '删除收藏夹',
+      }),
+    )
+    const confirm = screen.getByRole('dialog', { name: '删除收藏夹「work」' })
+    expect(confirm).toHaveTextContent('其中的 3 条片段会变为未分类，片段本身不会被删除。')
+    await user.click(within(confirm).getByRole('button', { name: '取消' }))
+    expect(props.onDeleteCollection).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「work」' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '编辑收藏夹「work」' })).getByRole('button', {
+        name: '删除收藏夹',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    expect(props.onDeleteCollection).toHaveBeenCalledWith(1)
+  })
+
+  it('删除空收藏夹时说明「还没有片段」', async () => {
+    const user = userEvent.setup()
+    renderCloudPage()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「笔记」' }))
+    await user.click(screen.getByRole('button', { name: '删除收藏夹' }))
+    expect(screen.getByRole('dialog', { name: '删除收藏夹「笔记」' })).toHaveTextContent(
+      '这个收藏夹里还没有片段。',
+    )
+  })
+
+  it('default 是系统收藏夹：不能重命名或删除，但仍可改色', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({
+      collections: [{ id: 5, name: 'default', color: '#c96442', order: 0 }],
+      collectionCounts: { 5: 1 },
+    })
+    expect(screen.getByText('系统')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '管理收藏夹「default」' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑收藏夹「default」' })
+    expect(within(dialog).getByRole('textbox', { name: '名称' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: '删除收藏夹' })).toBeDisabled()
+    expect(within(dialog).getByText(/系统收藏夹/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: '琥珀' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(props.onUpdateCollection).toHaveBeenCalledWith(5, { color: '#d9a24a' })
+  })
+
+  it('行内「移动到收藏夹」：列出未分类与各收藏夹，选中后回写归属', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({ entries: [snippet({ title: 'kubectl get nodes' })] })
+    await user.click(screen.getByRole('button', { name: '移动「kubectl get nodes」到收藏夹' }))
+    const menu = screen.getByRole('group', { name: '移动到收藏夹' })
+    expect(within(menu).getByRole('button', { name: '未分类' })).toBeInTheDocument()
+    await user.click(within(menu).getByRole('button', { name: /^work/ }))
+    expect(props.onMoveEntry).toHaveBeenCalledWith('e1', 1)
+    // 选完即收起
+    expect(screen.queryByRole('group', { name: '移动到收藏夹' })).toBeNull()
+  })
+
+  it('行内「移动到收藏夹」：可移回未分类，Escape 收起', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({
+      entries: [snippet({ title: 'kubectl get nodes', collectionId: 1 })],
+    })
+    const trigger = screen.getByRole('button', { name: '移动「kubectl get nodes」到收藏夹' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: '移动到收藏夹' })).toBeNull()
+    expect(trigger).toHaveFocus()
+
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: '未分类' }))
+    expect(props.onMoveEntry).toHaveBeenCalledWith('e1', null)
+  })
+
+  it('行内「新建收藏夹…」：创建成功后直接把条目移进去', async () => {
+    const user = userEvent.setup()
+    const props = renderCloudPage({ entries: [snippet({ title: 'kubectl get nodes' })] })
+    await user.click(screen.getByRole('button', { name: '移动「kubectl get nodes」到收藏夹' }))
+    await user.click(screen.getByRole('button', { name: '新建收藏夹…' }))
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.type(within(dialog).getByRole('textbox', { name: '名称' }), 'k8s')
+    await user.click(within(dialog).getByRole('button', { name: '创建' }))
+    expect(props.onCreateCollection).toHaveBeenCalledWith('k8s', expect.any(String))
+    expect(props.onMoveEntry).toHaveBeenCalledWith('e1', 9)
+  })
+
+  it('条目行显示所属收藏夹与色点；筛选到空收藏夹时给出针对性提示', () => {
+    renderCloudPage({ entries: [snippet({ title: 'kubectl get nodes', collectionId: 1 })] })
+    const tag = screen.getByTitle('收藏夹：work')
+    expect(tag.querySelector('.collection-dot')).not.toBeNull()
+    cleanup()
+    renderCloudPage({ entries: [], activeCollectionId: 1 })
+    expect(screen.getByText('这个收藏夹还是空的')).toBeInTheDocument()
+  })
+})
+
 describe('SnippetDetailPage（条目详情）', () => {
   function renderDetail(overrides: Partial<Parameters<typeof SnippetDetailPage>[0]> = {}) {
     const props = {
@@ -316,5 +572,54 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(screen.getByRole('button', { name: '取消置顶' })).toBeInTheDocument()
     expect(screen.getByText('已置顶')).toBeInTheDocument()
     expect(screen.getByText('是', { selector: 'dd' })).toBeInTheDocument()
+  })
+
+  it('云端模式下收藏夹是可编辑下拉：切换即回写归属', async () => {
+    const user = userEvent.setup()
+    const onMoveEntry = vi.fn()
+    const { props } = renderDetail({
+      collections: [
+        { id: 1, name: 'work', color: '#3f8f7d', order: 0 },
+        { id: 2, name: '笔记', color: '#5a7fb8', order: 1 },
+      ],
+      onMoveEntry,
+      onCreateCollection: vi.fn(async () => null),
+    })
+    const select = screen.getByRole('combobox', { name: '所属收藏夹' })
+    expect(select).toHaveValue('')
+    await user.selectOptions(select, '1')
+    expect(onMoveEntry).toHaveBeenCalledWith('e1', 1)
+    // 已归属的条目：下拉显示当前收藏夹名称
+    cleanup()
+    renderDetail({
+      entry: snippet({ collectionId: 2 }),
+      collections: [{ id: 2, name: '笔记', color: '#5a7fb8', order: 1 }],
+      onMoveEntry,
+      onCreateCollection: props.onCreateCollection,
+    })
+    expect(screen.getByRole('combobox', { name: '所属收藏夹' })).toHaveValue('2')
+  })
+
+  it('详情页可直接新建收藏夹并归属当前条目', async () => {
+    const user = userEvent.setup()
+    const onMoveEntry = vi.fn()
+    const createdAt = { id: 7, name: '临时', color: '#3f8f7d', order: 0 }
+    renderDetail({
+      collections: [{ id: 1, name: 'work', color: '#3f8f7d', order: 0 }],
+      onMoveEntry,
+      onCreateCollection: vi.fn(async () => createdAt),
+    })
+    await user.selectOptions(screen.getByRole('combobox', { name: '所属收藏夹' }), '__new__')
+    const dialog = screen.getByRole('dialog', { name: '新建收藏夹' })
+    await user.type(within(dialog).getByRole('textbox', { name: '名称' }), '临时')
+    await user.click(within(dialog).getByRole('button', { name: '创建' }))
+    expect(onMoveEntry).toHaveBeenCalledWith('e1', 7)
+  })
+
+  it('未登录时收藏夹保持只读文本，没有下拉', () => {
+    renderDetail({ collections: [{ id: 1, name: 'work', color: '#3f8f7d', order: 0 }] })
+    expect(screen.queryByRole('combobox', { name: '所属收藏夹' })).toBeNull()
+    const row = screen.getByText('收藏夹', { selector: 'dt' }).closest('.detail-row')
+    expect(row?.querySelector('dd')?.textContent).toBe('无')
   })
 })

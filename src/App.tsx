@@ -17,7 +17,8 @@ import type { EditorMode } from './editor/editorMode'
 import { jumpToPlaceholder } from './editor/navigation'
 import type { CloudSession } from './cloud/session'
 import type { SyncStatus } from './cloud/sync'
-import type { ApiCollection } from './cloud/api'
+import type { ApiCollection, CollectionPatch } from './cloud/api'
+import { countByCollection, planCollectionMove } from './utils/collections'
 import type { Snippet, SnippetKind } from './storage/snippets'
 import {
   LOCAL_SNIPPET_STORAGE,
@@ -707,6 +708,8 @@ export default function App() {
   }, [showToast])
 
   // —— 收藏夹管理（云端模式；运行时动态 import 云模块）——
+  // 这些回调不再自己 catch + toast：收藏夹的写操作全部发生在对话框里，
+  // 失败信息（如重名 409「同名收藏夹已存在」）要就地显示在对话框内，而不是飘一条 toast。
   const refreshCollections = useCallback(async () => {
     if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
     const { cloudApi } = await import('./cloud/api')
@@ -714,46 +717,53 @@ export default function App() {
   }, [])
 
   const handleCreateCollection = useCallback(
-    async (name: string) => {
-      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
-      try {
-        const { cloudApi } = await import('./cloud/api')
-        await cloudApi.createCollection(name)
-        await refreshCollections()
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : '收藏夹创建失败', 'err')
-      }
+    async (name: string, color: string): Promise<ApiCollection | null> => {
+      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return null
+      const { cloudApi } = await import('./cloud/api')
+      const created = await cloudApi.createCollection(name, color)
+      await refreshCollections()
+      return created
     },
-    [refreshCollections, showToast],
+    [refreshCollections],
   )
 
-  const handleRenameCollection = useCallback(
-    async (id: number, name: string) => {
+  const handleUpdateCollection = useCallback(
+    async (id: number, patch: CollectionPatch) => {
       if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
-      try {
-        const { cloudApi } = await import('./cloud/api')
-        await cloudApi.renameCollection(id, name)
-        await refreshCollections()
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : '收藏夹重命名失败', 'err')
-      }
+      const { cloudApi } = await import('./cloud/api')
+      await cloudApi.updateCollection(id, patch)
+      await refreshCollections()
     },
-    [refreshCollections, showToast],
+    [refreshCollections],
+  )
+
+  /**
+   * 上移 / 下移收藏夹：order 由 planCollectionMove 算出需要改动的条目（含重值归一下标），
+   * 逐条 PATCH 后重新拉列表，界面顺序始终以服务端为准。
+   */
+  const handleMoveCollection = useCallback(
+    async (id: number, dir: -1 | 1) => {
+      if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
+      const patches = planCollectionMove(collectionsRef.current, id, dir)
+      if (patches.length === 0) return
+      const { cloudApi } = await import('./cloud/api')
+      for (const patch of patches) {
+        await cloudApi.updateCollection(patch.id, { order: patch.order })
+      }
+      await refreshCollections()
+    },
+    [refreshCollections],
   )
 
   const handleDeleteCollection = useCallback(
     async (id: number) => {
       if (import.meta.env.VITE_CLOUD_ENABLED !== 'true') return
-      try {
-        const { cloudApi } = await import('./cloud/api')
-        await cloudApi.deleteCollection(id)
-        await refreshCollections()
-        setActiveCollectionId((prev) => (prev === id ? null : prev))
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : '收藏夹删除失败', 'err')
-      }
+      const { cloudApi } = await import('./cloud/api')
+      await cloudApi.deleteCollection(id)
+      await refreshCollections()
+      setActiveCollectionId((prev) => (prev === id ? null : prev))
     },
-    [refreshCollections, showToast],
+    [refreshCollections],
   )
 
   // —— 云端会话接线（对话框回调）——
@@ -873,6 +883,9 @@ export default function App() {
       ? library
       : library.filter((s) => s.collectionId === activeCollectionId)
 
+  // 收藏夹计数按全集算（不随当前筛选变化）：面板上的数字必须是「里面有多少条」
+  const collectionCounts = useMemo(() => countByCollection(library), [library])
+
   const cloudStatusView: CloudStatusView | undefined =
     import.meta.env.VITE_CLOUD_ENABLED === 'true'
       ? {
@@ -913,9 +926,13 @@ export default function App() {
       collections={collections}
       activeCollectionId={activeCollectionId}
       onSelectCollection={setActiveCollectionId}
+      collectionCounts={collectionCounts}
+      totalCount={library.length}
       onCreateCollection={handleCreateCollection}
-      onRenameCollection={handleRenameCollection}
+      onUpdateCollection={handleUpdateCollection}
       onDeleteCollection={handleDeleteCollection}
+      onMoveCollection={handleMoveCollection}
+      onMoveEntry={handleCollectionChange}
     />
   )
 
@@ -1084,6 +1101,8 @@ export default function App() {
             onCopy={(entry) => void handleCopyEntry(entry)}
             onTogglePin={handleTogglePin}
             onDelete={handleDeleteFromDetail}
+            onMoveEntry={cloudUser !== null ? handleCollectionChange : undefined}
+            onCreateCollection={cloudUser !== null ? handleCreateCollection : undefined}
           />
         ) : (
           <div className="page detail-page">
@@ -1117,7 +1136,11 @@ export default function App() {
         onThemeChange={handleThemeChange}
       />
 
-      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HelpDialog
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        cloudMode={cloudUser !== null}
+      />
 
       <Dialog open={pendingNav !== null} onClose={closePendingNav} title="有未保存的修改">
         <p className="confirm-text">编辑器里的内容还没有保存到片段库，继续操作将丢弃这些修改。</p>

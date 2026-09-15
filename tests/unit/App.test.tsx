@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App'
+import { HelpDialog } from '../../src/components/HelpDialog'
 
 const K3S = [
   "curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_TOKEN' sh -s - server \\",
@@ -178,6 +179,20 @@ describe('首次提示与帮助面板', () => {
     expect(screen.getByText('Ctrl/Cmd+Enter')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '关闭帮助' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('匿名构建的帮助面板不提收藏夹（收藏夹只在登录版存在）', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: '快捷键帮助' }))
+    expect(screen.queryByText('收藏夹（自托管登录版）')).not.toBeInTheDocument()
+  })
+
+  it('登录版帮助面板说明收藏夹管理与「移动到收藏夹」入口', () => {
+    render(<HelpDialog open onClose={() => {}} cloudMode />)
+    expect(screen.getByText('收藏夹（自托管登录版）', { selector: 'h3' })).toBeInTheDocument()
+    expect(screen.getByText(/把条目移动到收藏夹/)).toBeInTheDocument()
+    expect(screen.getByText(/default 是系统收藏夹/)).toBeInTheDocument()
   })
 
   it('Service Worker 新版本就绪时显示提示条，点击立即刷新', async () => {

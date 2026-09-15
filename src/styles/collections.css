@@ -1,0 +1,430 @@
+/* 收藏夹：面板、行内「移动到收藏夹」浮层、管理对话框、详情页归属选择。
+   视觉沿用 Organic 体系（面板底 + 发丝边 + 药片圆角），但收藏夹颜色是用户数据
+   （#RRGGBB），因此不引用主题令牌——同一收藏夹在深浅主题下必须是同一个颜色。 */
+
+/* ---------- 面板 ---------- */
+
+.collection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.collection-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collection-panel-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.collection-panel-count {
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.collection-new-btn {
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+.collection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.collection-item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-control);
+  transition:
+    border-color 0.14s ease,
+    background 0.14s ease;
+}
+
+.collection-item:hover {
+  border-color: var(--border-strong);
+}
+
+.collection-item.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.collection-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 5px 4px 5px 11px;
+  cursor: pointer;
+}
+
+.collection-row:hover {
+  color: var(--text);
+}
+
+.collection-row.active {
+  color: var(--accent-ink);
+}
+
+.collection-row-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-row-count {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-control);
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.collection-item.active .collection-row-count {
+  background: var(--accent-faint);
+  color: var(--accent-ink);
+}
+
+/* 系统收藏夹（default）标记：重命名/删除入口对它不可用，这里说明原因 */
+.collection-sys {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  color: var(--muted-2);
+}
+
+/* 管理入口常驻可见（不靠悬停浮现）：重命名/排序/删除必须能被发现 */
+.collection-manage {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-right: 3px;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+.collection-manage:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+  color: var(--accent-ink);
+}
+
+/* 用户数据色圆点：所有出现收藏夹的地方共用 */
+.collection-dot {
+  display: inline-block;
+  flex: none;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.collection-dot.all {
+  width: 10px;
+  height: 10px;
+  background: conic-gradient(
+    from 210deg,
+    var(--c-accent-400),
+    var(--c-sage-400),
+    var(--info),
+    var(--c-accent-400)
+  );
+}
+
+/* ---------- 行内「移动到收藏夹」浮层 ---------- */
+
+.move-wrap {
+  display: inline-flex;
+  align-self: center;
+}
+
+/* 与行内其他按钮一致，但默认可见（降到弱色）——入口不能靠悬停才出现 */
+.history-item-move {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin-right: 2px;
+  background: var(--bg-raised);
+  color: var(--muted-2);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-row:hover .history-item-move,
+.history-row.active .history-item-move,
+.history-item-move:focus-visible,
+.history-item-move[aria-expanded='true'] {
+  color: var(--accent-ink);
+}
+
+.move-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 200px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.move-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  text-align: left;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.move-menu-item:hover {
+  background: var(--control-hover-bg);
+  color: var(--text);
+}
+
+.move-menu-item.on {
+  color: var(--accent-ink);
+}
+
+.move-menu-mark {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--accent);
+}
+
+/* 「未分类」的占位符：虚线小圆，与收藏夹的实色圆点区分 */
+.move-menu-none {
+  width: 9px;
+  height: 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.move-menu-check {
+  flex: none;
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.move-menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.move-menu-count {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.move-menu-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--border);
+}
+
+.move-menu-new {
+  color: var(--accent-ink);
+}
+
+/* 列表行的收藏夹标记 */
+.tag.collection-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  background: var(--bg-control);
+}
+
+.collection-tag-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 对话框：名称 + 颜色 + 排序/删除 ---------- */
+
+.collection-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.collection-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.collection-field-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  padding: 0;
+}
+
+.collection-field-input {
+  background: var(--bg-control);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  padding: 8px 12px;
+}
+
+.collection-field-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.collection-field-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.collection-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted-2);
+}
+
+.collection-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collection-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.collection-swatch:hover {
+  border-color: var(--border-strong);
+}
+
+.collection-swatch.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.collection-swatch:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 原生 radio 保留在无障碍树里（可被键盘与读屏聚焦），视觉上用色块表示 */
+.collection-swatch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.collection-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.collection-extras {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.collection-extras .btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+/* ---------- 详情页归属选择 ---------- */
+
+.detail-collection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-collection-select {
+  max-width: 190px;
+}
+
+/* ---------- 窄视口 ---------- */
+
+@media (max-width: 640px) {
+  .collection-panel {
+    padding: 10px 12px;
+  }
+
+  .collection-row-name,
+  .tag.collection-tag {
+    max-width: 110px;
+  }
+
+  /* 触摸设备没有悬停：行内入口保持常显并放大到易点尺寸 */
+  .history-item-move {
+    width: 40px;
+    height: 40px;
+  }
+}
