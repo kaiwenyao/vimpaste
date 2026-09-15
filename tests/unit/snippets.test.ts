@@ -14,6 +14,7 @@ import {
   markTrashed,
   migrateV1ToV2,
   purgeExpiredTombstones,
+  restoreBlockedByCap,
   sanitizeSnippet,
   saveSnippetsTo,
   splitByTrash,
@@ -279,5 +280,20 @@ describe('回收站：墓碑保留 30 天（本地路径与 v1 键共用同一�
     expect(active.map((s) => s.id)).toEqual(['a'])
     expect(trash.map((s) => s.id)).toEqual(['new-delete'])
     expect(dropSnippets(entries, ['a']).map((s) => s.id)).toEqual(['b', 'old-delete', 'new-delete'])
+  })
+
+  it('restoreBlockedByCap：在用条目满了就不能再恢复，墓碑不计入', () => {
+    const now = Date.now()
+    const full = Array.from({ length: MAX_LOCAL_SNIPPETS }, (_, i) =>
+      snippet({ id: `a${i}`, updatedAt: now - i }),
+    )
+    expect(restoreBlockedByCap(full, MAX_LOCAL_SNIPPETS)).toBe(true)
+    expect(
+      restoreBlockedByCap(
+        [...full, { ...snippet({ id: 't' }), deletedAt: now }],
+        MAX_LOCAL_SNIPPETS,
+      ),
+    ).toBe(true)
+    expect(restoreBlockedByCap(full.slice(1), MAX_LOCAL_SNIPPETS)).toBe(false)
   })
 })

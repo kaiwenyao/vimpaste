@@ -19,6 +19,8 @@ import {
   loadSnippetsFrom,
   markRestored,
   markTrashed,
+  RestoreCapError,
+  restoreBlockedByCap,
   saveSnippetsTo,
   storedEntryCount,
   trashedSnippets,
@@ -37,7 +39,12 @@ export interface SnippetStore {
   trash(id: string): void
   /** 批量删除进回收站（「清空全部片段」用）：只落盘一次，回调逐条触发 */
   trashMany(ids: readonly string[]): void
-  /** 从回收站恢复：墓碑清零、updatedAt 推到当前时刻 */
+  /** 在用条目上限：恢复前要查，满了再恢复会挤掉别的条目 */
+  readonly maxEntries: number
+  /**
+   * 从回收站恢复：墓碑清零、updatedAt 推到当前时刻。
+   * 在用条目已达上限时抛 RestoreCapError，避免截断时丢掉另一条。
+   */
   restore(id: string): void
   /** 彻底删除单条（不可恢复）；仅对回收站里的墓碑生效 */
   purge(id: string): void
@@ -76,6 +83,10 @@ export class LocalSnippetStore implements SnippetStore {
     // 否则过期数据会一直占着额度——「到期自动删除」得真的把数据删掉，
     // 而不只是让它看不见。条数相等时不重写，启动不白花一次序列化。
     if (onDisk !== null && onDisk > this.list.length) this.persist()
+  }
+
+  get maxEntries(): number {
+    return this.storage.maxEntries
   }
 
   current(): Snippet[] {
@@ -118,6 +129,9 @@ export class LocalSnippetStore implements SnippetStore {
   restore(id: string): void {
     const entry = this.list.find((s) => s.id === id)
     if (!entry || !isTrashed(entry)) return
+    if (restoreBlockedByCap(this.list, this.storage.maxEntries)) {
+      throw new RestoreCapError()
+    }
     this.list = markRestored(this.list, id)
     this.persist()
     this.emit()
@@ -175,6 +189,10 @@ export class LocalSnippetStore implements SnippetStore {
 
   private persist(): void {
     saveSnippetsTo(this.storage, this.list)
+    const saved = loadSnippetsFrom(this.storage)
+    // saveSnippetsTo 在存储彻底失败时会删掉键：不要把内存里还在的数据换成空列表
+    if (saved.length === 0 && this.list.length > 0) return
+    this.list = saved
   }
 
   private emit(): void {

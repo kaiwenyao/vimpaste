@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalSnippetStore } from '../../src/storage/SnippetStore'
-import { LOCAL_SNIPPET_STORAGE, cloudCacheStorage } from '../../src/storage/snippets'
+import { LOCAL_SNIPPET_STORAGE, cloudCacheStorage, RestoreCapError } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
 
 const CLOUD_CACHE_STORAGE = cloudCacheStorage(7)
@@ -187,5 +187,48 @@ describe('LocalSnippetStore（回收站：墓碑保留 30 天）', () => {
     const first = stored()[0].deletedAt
     store.trash('a')
     expect(stored()[0].deletedAt).toBe(first)
+  })
+
+  it('active 已满时 restore 抛错，不挤掉在用条目、墓碑仍在', () => {
+    const storage = { key: 'vimpaste.cap.restore', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'trashed', content: 'keep-me', updatedAt: 1 }))
+    store.trash('trashed')
+    store.upsert(snippet({ id: 'keep-new', updatedAt: 3 }))
+    store.upsert(snippet({ id: 'keep-old', updatedAt: 2 }))
+
+    expect(() => store.restore('trashed')).toThrow(RestoreCapError)
+    const alive = store.current().filter((s) => s.deletedAt == null).map((s) => s.id)
+    expect(alive.sort()).toEqual(['keep-new', 'keep-old'])
+    expect(store.trashEntries().map((s) => s.id)).toEqual(['trashed'])
+    expect(store.trashEntries()[0].content).toBe('keep-me')
+  })
+
+  it('persist 后内存与磁盘一致：超出上限时 current() 也被截断', () => {
+    const storage = { key: 'vimpaste.cap.mem', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'a', updatedAt: 1 }))
+    store.upsert(snippet({ id: 'b', updatedAt: 2 }))
+    store.upsert(snippet({ id: 'c', updatedAt: 3 }))
+    expect(store.current().map((s) => s.id)).toEqual(['c', 'b'])
+    expect(JSON.parse(localStorage.getItem(storage.key) ?? '[]').map((s: { id: string }) => s.id)).toEqual([
+      'c',
+      'b',
+    ])
+  })
+
+  it('存储彻底写失败时不把内存快照换成空列表', () => {
+    const storage = { key: 'vimpaste.cap.wipe', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'a', content: 'keep' }))
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    try {
+      store.upsert(snippet({ id: 'b', content: 'also' }))
+      expect(store.current().some((s) => s.id === 'a' && s.content === 'keep')).toBe(true)
+    } finally {
+      setItem.mockRestore()
+    }
   })
 })

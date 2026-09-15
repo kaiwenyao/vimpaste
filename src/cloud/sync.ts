@@ -12,7 +12,7 @@
  * 连续失败进入 paused 状态，用户可点击状态栏手动重试。
  */
 import { createHistoryId } from '../storage/history'
-import type { Snippet } from '../storage/snippets'
+import { RestoreCapError, restoreBlockedByCap, type Snippet } from '../storage/snippets'
 import type { LocalSnippetStore } from '../storage/SnippetStore'
 import { cloudApi, CloudApiError } from './api'
 import type { ApiSnippet, SyncResult } from './api'
@@ -134,6 +134,8 @@ export class SyncEngine {
   private readonly inFlightDeletes = new Set<string>()
   /** 在途删除期间用户点了「恢复」：DELETE 落地后要立刻撤销（否则条目又被删一次） */
   private readonly undoAfterDelete = new Set<string>()
+  /** 恢复串行化：两路并发 restore 不能都通过满额检查再各自写入，否则会截断挤掉一条 */
+  private restoreChain: Promise<void> = Promise.resolve()
 
   constructor(private readonly opts: SyncEngineOptions) {
     this.queue = loadQueue(opts.queueKey)
@@ -353,6 +355,28 @@ export class SyncEngine {
    * 下一轮同步却把墓碑再拉回来，条目「恢复后又不见了」。
    */
   async restoreFromTrash(id: string): Promise<void> {
+    const previous = this.restoreChain
+    let release!: () => void
+    this.restoreChain = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      await previous
+      await this.restoreFromTrashLocked(id)
+    } finally {
+      release()
+    }
+  }
+
+  private assertRoomToRestore(): void {
+    if (restoreBlockedByCap(this.opts.store.current(), this.opts.store.maxEntries)) {
+      throw new RestoreCapError()
+    }
+  }
+
+  private async restoreFromTrashLocked(id: string): Promise<void> {
+    // 满额拒绝必须在撤队列 / 打 API 之前：否则服务端已经恢复、本机却挤掉另一条
+    this.assertRoomToRestore()
     const local = this.opts.store.current().find((s) => s.id === id)
     // 1) 待推删除先撤下来：否则恢复成功后，队列里的 DELETE 会把墓碑再打回去
     this.queue.deletes = this.queue.deletes.filter((d) => d !== id)
@@ -368,6 +392,8 @@ export class SyncEngine {
     if (!local || local.syncState !== 'local') {
       try {
         const row = await cloudApi.restoreSnippet(id)
+        // API 等待期间用户可能又保存了一条，把最后一个名额占掉：写回前再查一次
+        this.assertRoomToRestore()
         this.writeRemote(serverToLocal(row))
         return
       } catch (error) {
@@ -376,6 +402,7 @@ export class SyncEngine {
         if (!(error instanceof CloudApiError && error.status === 404)) throw error
       }
     }
+    this.assertRoomToRestore()
     this.restoreLocally(local)
   }
 

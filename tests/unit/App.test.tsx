@@ -781,6 +781,51 @@ describe('「已保存」片段库页面与详情页', () => {
     expect(rows).toHaveLength(0)
   })
 
+  it('片段库已满时恢复被拒绝，不挤掉另一条在用条目', async () => {
+    const user = userEvent.setup()
+    const now = Date.now()
+    const active = Array.from({ length: 30 }, (_, i) => ({
+      id: `a${i}`,
+      title: `在用 ${i}`,
+      content: `content-${i}`,
+      langId: 'plaintext',
+      createdAt: now,
+      updatedAt: now - i,
+    }))
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        ...active,
+        {
+          id: 'trashed',
+          title: '被删的',
+          content: 'should-stay-in-trash',
+          langId: 'plaintext',
+          createdAt: now,
+          updatedAt: now - 1000,
+          deletedAt: now - 1000,
+        },
+      ]),
+    )
+    render(<App />)
+    window.location.hash = '#/trash'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    expect(await screen.findByRole('heading', { name: '回收站' })).toBeInTheDocument()
+    expect(screen.getByText('被删的')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '恢复「被删的」' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('片段库已满，请先删一条再恢复')
+    expect(screen.getByText('被删的')).toBeInTheDocument()
+
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      id: string
+      deletedAt: number | null
+    }[]
+    expect(stored.filter((s) => s.deletedAt == null)).toHaveLength(30)
+    expect(stored.find((s) => s.id === 'a29')).toBeDefined()
+    expect(stored.find((s) => s.id === 'trashed')?.deletedAt).toEqual(expect.any(Number))
+  })
+
   it('打开应用时清掉超过 30 天的墓碑（到期自动删除，本地路径靠惰性清理）', async () => {
     const DAY = 24 * 60 * 60 * 1000
     localStorage.setItem(

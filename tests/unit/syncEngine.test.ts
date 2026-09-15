@@ -429,6 +429,71 @@ describe('SyncEngine 回收站（恢复 / 彻底删除 / 清空）', () => {
     engine.stop()
   })
 
+  it('片段库已满时恢复抛错：不打 restore API、不撤待推删除、不挤掉在用条目', async () => {
+    const storage = { key: 'vimpaste.snippets.v2.cap', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage, {
+      onUpsert: (s) => {
+        if (!engine.remoteWrite) engine.enqueueUpsert(s)
+      },
+      onRemove: (id) => {
+        if (!engine.remoteWrite) engine.enqueueDelete(id)
+      },
+    })
+    const engine = new SyncEngine({ store, onStatus: () => {}, queueKey: QUEUE_KEY })
+    store.upsert(snippet({ id: ID, syncState: 'synced', updatedAt: 1 }))
+    store.trash(ID)
+    store.upsert(snippet({ id: 'keep-a', syncState: 'synced', updatedAt: 3 }))
+    store.upsert(snippet({ id: 'keep-b', syncState: 'synced', updatedAt: 2 }))
+    expect(loadQueue(QUEUE_KEY).deletes).toEqual([ID])
+
+    await expect(engine.restoreFromTrash(ID)).rejects.toThrow('片段库已满，请先删一条再恢复')
+    expect(restoreSnippetMock).not.toHaveBeenCalled()
+    expect(loadQueue(QUEUE_KEY).deletes).toEqual([ID])
+    expect(
+      store
+        .current()
+        .filter((s) => s.deletedAt == null)
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(['keep-a', 'keep-b'])
+    expect(store.trashEntries().map((s) => s.id)).toEqual([ID])
+    engine.stop()
+  })
+
+  it('并发恢复只让一条成功：第二份等锁后因满额失败，不挤掉在用条目', async () => {
+    const storage = { key: 'vimpaste.snippets.v2.cap2', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage, {
+      onUpsert: (s) => {
+        if (!engine.remoteWrite) engine.enqueueUpsert(s)
+      },
+      onRemove: (id) => {
+        if (!engine.remoteWrite) engine.enqueueDelete(id)
+      },
+    })
+    const engine = new SyncEngine({ store, onStatus: () => {}, queueKey: QUEUE_KEY })
+    // 1 条在用、还剩 1 个名额；两条都是服务端墓碑（本地缓存里没有）
+    store.upsert(snippet({ id: 'keep', syncState: 'synced', updatedAt: 1 }))
+    restoreSnippetMock.mockImplementation((id: string) =>
+      Promise.resolve(apiSnippet({ id, deletedAt: null })),
+    )
+
+    const results = await Promise.allSettled([
+      engine.restoreFromTrash(ID),
+      engine.restoreFromTrash(DELETED_ID),
+    ])
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1)
+    const rejected = results.find((r) => r.status === 'rejected')
+    expect(rejected?.status === 'rejected' && rejected.reason.message).toBe(
+      '片段库已满，请先删一条再恢复',
+    )
+    expect(restoreSnippetMock).toHaveBeenCalledTimes(1)
+    const alive = store.current().filter((s) => s.deletedAt == null)
+    expect(alive).toHaveLength(2)
+    expect(alive.some((s) => s.id === 'keep')).toBe(true)
+    engine.stop()
+  })
+
   it('服务端没有这条（404）时本地恢复并重新入队：恢复按钮点了就该恢复', async () => {
     const { store, engine } = makeWiredEngine()
     trashSyncedEntry(store)

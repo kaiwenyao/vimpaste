@@ -588,7 +588,12 @@ export default function App() {
         })()
         return
       }
-      storeRef.current.restore(id)
+      try {
+        storeRef.current.restore(id)
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '恢复失败，请稍后重试', 'err')
+        return
+      }
       showToast('已恢复到片段库', 'ok')
     },
     [refreshTrash, showToast],

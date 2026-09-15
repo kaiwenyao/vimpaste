@@ -42,6 +42,20 @@ export const MAX_LOCAL_SNIPPETS = 30
 export const MAX_CACHED_SNIPPETS = 500
 
 /**
+ * 片段库已满时拒绝从回收站恢复。
+ * 若仍写入，saveSnippetsTo 会按 updatedAt 截断 active，挤掉的是另一条在用条目，
+ * 而且不进回收站——用户点「恢复」却丢掉了别的内容。
+ */
+export const RESTORE_CAP_MESSAGE = '片段库已满，请先删一条再恢复'
+
+export class RestoreCapError extends Error {
+  constructor() {
+    super(RESTORE_CAP_MESSAGE)
+    this.name = 'RestoreCapError'
+  }
+}
+
+/**
  * 回收站保留天数。与服务端 TOMBSTONE_RETENTION_DAYS 的默认值一致：
  * 两条路径（未登录 / 登录）对用户必须是同一个承诺——「删了还能找回 30 天」。
  */
@@ -162,6 +176,11 @@ function sortTrash(list: Snippet[]): Snippet[] {
 /** 是否为回收站里的墓碑条目 */
 export function isTrashed(snippet: Snippet): boolean {
   return snippet.deletedAt != null
+}
+
+/** 在用条目是否已达上限：满了就不能再从回收站恢复（否则会挤掉另一条） */
+export function restoreBlockedByCap(entries: Snippet[], maxEntries: number): boolean {
+  return entries.filter((s) => !isTrashed(s)).length >= maxEntries
 }
 
 /** 墓碑是否已到期（保留期满即彻底清除） */
