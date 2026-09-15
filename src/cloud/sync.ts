@@ -217,7 +217,9 @@ export class SyncEngine {
   /** 首次登录合并：把本机既有条目整体标记为待推送（§3.1 合并向导） */
   enqueueMany(snippets: Snippet[]): void {
     for (const s of snippets) {
-      if (s.localOnly) continue
+      // 墓碑与仅本地条目都不上传：合并只搬运「本机还活着的」内容，
+      // 删除留在本地回收站，不为了合并去服务端造墓碑
+      if (s.localOnly || s.deletedAt != null) continue
       this.queue.upserts = [
         ...this.queue.upserts.filter((e) => e.id !== s.id),
         { ...s, syncState: 'pending' },

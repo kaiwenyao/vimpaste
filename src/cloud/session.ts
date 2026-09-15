@@ -54,7 +54,12 @@ export class CloudSession {
     this.user = user
     this.localUnsynced = mergeAlreadyAsked(user.id)
       ? []
-      : store.current().filter((s) => s.syncState === 'local' && !s.localOnly)
+      : store
+          .current()
+          // 墓碑不算可上传条目：与 countLocalHistory 对齐。
+          // 否则「匿名删除 → 登录合并」会把墓碑当活条目推上去（服务端 sync 创建
+          // 路径强制 deletedAt: null），登录前删掉的内容会在云端和其它设备复活。
+          .filter((s) => s.syncState === 'local' && !s.localOnly && s.deletedAt == null)
   }
 
   /** 合并向导「合并到云端」：全部本机条目入队推送 */
@@ -94,7 +99,11 @@ export async function startCloudSession(
       if (!engine.remoteWrite) engine.enqueueDelete(id)
     },
   })
-  const engine = new SyncEngine({ store, onStatus: options.onStatus, queueKey: queueKeyFor(user.id) })
+  const engine = new SyncEngine({
+    store,
+    onStatus: options.onStatus,
+    queueKey: queueKeyFor(user.id),
+  })
   engine.start()
   await engine.pullAll()
   return new CloudSession(store, engine, user)

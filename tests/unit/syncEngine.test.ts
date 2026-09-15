@@ -137,6 +137,21 @@ describe('SyncEngine（冲突副本 / 墓碑 / 仅本地 / 防抖推送）', () 
     expect(loadQueue(QUEUE_KEY).upserts).toHaveLength(0)
   })
 
+  it('enqueueMany 跳过墓碑：匿名删除的条目绝不被当成新建上传', () => {
+    const { engine } = makeEngine()
+    engine.enqueueMany([
+      snippet({ id: '11111111-1111-4111-8111-111111111111', syncState: 'local' }),
+      snippet({
+        id: '22222222-2222-4222-8222-222222222222',
+        syncState: 'local',
+        deletedAt: Date.now(),
+      }),
+    ])
+    expect(loadQueue(QUEUE_KEY).upserts.map((s) => s.id)).toEqual([
+      '11111111-1111-4111-8111-111111111111',
+    ])
+  })
+
   it('flush：先增量拉取再推上行；applied 后队列清空、缓存标记 synced', async () => {
     const { store, engine } = makeEngine()
     const s = snippet({ id: '11111111-1111-4111-8111-111111111111' })
