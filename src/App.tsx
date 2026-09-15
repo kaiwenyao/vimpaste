@@ -1239,6 +1239,7 @@ export default function App() {
           entries={trashEntries}
           retentionDays={trashRetentionDays}
           loadError={cloudUser !== null ? trashError : null}
+          cloudMode={cloudUser !== null}
           onRefresh={cloudUser !== null ? refreshTrash : undefined}
           onBack={() => navigate(SAVED_PATH)}
           onRestore={handleRestoreFromTrash}

@@ -103,8 +103,11 @@ test.describe('回收站（本地路径）', () => {
     await page.getByRole('button', { name: '回收站（1 条）' }).click()
     await expect(page.getByRole('heading', { name: '回收站' })).toBeVisible()
 
-    // 单条彻底删除
+    // 单条彻底删除：第一次点击只是进入确认态，第二次才真的删
     await page.getByRole('button', { name: /^彻底删除「curl -sfL/ }).click()
+    await expect(page.getByRole('button', { name: /^确认彻底删除「curl -sfL/ })).toBeVisible()
+    expect(await stored(page)).toHaveLength(1)
+    await page.getByRole('button', { name: /^确认彻底删除「curl -sfL/ }).click()
     await expect(page.getByText('回收站是空的')).toBeVisible()
     expect(await stored(page)).toHaveLength(0)
 

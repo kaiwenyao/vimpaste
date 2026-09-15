@@ -101,8 +101,25 @@ describe('TrashPage', () => {
     expect(props.onRestore).toHaveBeenCalledWith('e1')
 
     await user.click(screen.getByRole('button', { name: '彻底删除「curl 命令」' }))
+    expect(props.onPurge).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '确认彻底删除「curl 命令」' }))
     expect(props.onPurge).toHaveBeenCalledWith('e1')
     expect(props.onEmptyTrash).not.toHaveBeenCalled()
+  })
+
+  it('单条彻底删除与清空一样需要二次确认；武装另一条会重置上一条', async () => {
+    const user = userEvent.setup()
+    const props = renderTrashPage({
+      entries: [entry({ id: 'a', title: 'A' }), entry({ id: 'b', title: 'B' })],
+    })
+
+    await user.click(screen.getByRole('button', { name: '彻底删除「A」' }))
+    expect(props.onPurge).not.toHaveBeenCalled()
+    // 武装另一条：只保留当前条目的确认态，避免多行同时待确认
+    await user.click(screen.getByRole('button', { name: '彻底删除「B」' }))
+    expect(screen.queryByRole('button', { name: '确认彻底删除「A」' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认彻底删除「B」' }))
+    expect(props.onPurge).toHaveBeenCalledWith('b')
   })
 
   it('保留天数说明跟随传入值（云端可配置，不写死 30）', () => {
@@ -143,6 +160,15 @@ describe('TrashPage', () => {
   it('尚未送达服务端的墓碑标「未同步」', () => {
     renderTrashPage({ entries: [entry({ pending: true })] })
     expect(screen.getByLabelText('尚未同步到服务器')).toBeInTheDocument()
+  })
+
+  it('未登录页脚不提「服务器」（匿名路径没有服务器）；登录时才提', () => {
+    renderTrashPage()
+    expect(screen.getByText('彻底删除与清空回收站都不可恢复')).toBeInTheDocument()
+
+    cleanup()
+    renderTrashPage({ cloudMode: true })
+    expect(screen.getByText(/会立即从服务器一并抹掉/)).toBeInTheDocument()
   })
 })
 

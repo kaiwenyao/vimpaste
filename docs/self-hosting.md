@@ -94,6 +94,12 @@ npm run create-user -- --email me@example.com --password '至少8位'
 | `DELETE /api/snippets/:id/purge` | 彻底删除单条墓碑（在用条目返回 409 `NOT_TRASHED`）                      |
 | `DELETE /api/snippets/trash`     | 清空回收站，返回被物理删除的条数                                        |
 
+- **不要急于「彻底删除」**：它与「清空回收站」都会**立即物理删除**，不等墓碑传播到
+  其它设备。若某台设备在同步到这条删除之前仍持有活副本，之后你在那台设备上编辑它，
+  这条会以「新建」的身份被重新推回服务器（带更新的 `updatedAt`，服务端只能照收）。
+  删除会保留 `TOMBSTONE_RETENTION_DAYS` 天，确认所有常用设备都已同步、或这条确实
+  不再需要后再彻底删除即可。
+
 - 敏感内容提醒：服务端**明文**存储片段内容（这是服务端搜索与标题预览的前提），
   真正敏感的条目请开「仅本地」。详见 [privacy.md](privacy.md)。
 

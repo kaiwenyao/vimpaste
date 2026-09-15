@@ -593,6 +593,20 @@
   align-items: center;
 }
 
+/* 单条彻底删除的两段式确认：武装后按钮展开显示「确认？」并常显危险色 */
+.history-item-delete.danger {
+  width: auto;
+  min-width: 26px;
+  padding: 0 8px;
+  gap: 4px;
+  opacity: 1;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
 .trash-list .history-item-meta {
   white-space: normal;
 }

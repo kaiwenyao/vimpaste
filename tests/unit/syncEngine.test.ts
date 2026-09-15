@@ -444,6 +444,33 @@ describe('SyncEngine 回收站（恢复 / 彻底删除 / 清空）', () => {
     engine.stop()
   })
 
+  it('刷新 / 换设备后本地缓存里没有这条：仍要打 restore API，并把条目写回缓存', async () => {
+    // 场景：登录删除 → 下行墓碑把本地墓碑从缓存移除（mergePulled → store.remove）
+    // → 刷新/换设备后回收站列表来自 GET /trash，本地 store 里已经没有该 id。
+    // 此时若跳过 restore API 直接 restoreLocally，会以「条目不存在」失败。
+    const { store, engine } = makeWiredEngine()
+    expect(store.current().find((s) => s.id === ID)).toBeUndefined()
+
+    restoreSnippetMock.mockResolvedValue(apiSnippet({ id: ID, deletedAt: null }))
+    await engine.restoreFromTrash(ID)
+
+    expect(restoreSnippetMock).toHaveBeenCalledWith(ID)
+    const row = store.current().find((s) => s.id === ID)
+    expect(row?.deletedAt).toBeNull()
+    expect(row?.syncState).toBe('synced')
+    // 服务端已经是真相：恢复不是一次上行推送
+    expect(loadQueue(QUEUE_KEY).upserts).toHaveLength(0)
+    engine.stop()
+  })
+
+  it('本地缓存里没有且服务端也没有（404）：抛错，不假装恢复成功', async () => {
+    const { engine } = makeWiredEngine()
+    restoreSnippetMock.mockRejectedValue(new CloudApiError(404, 'NOT_FOUND', '条目不存在'))
+
+    await expect(engine.restoreFromTrash(ID)).rejects.toThrow('条目不存在')
+    engine.stop()
+  })
+
   it('删除在途期间恢复：DELETE 落地后立刻撤销，条目不会被再删一次', async () => {
     const { store, engine } = makeWiredEngine()
     trashSyncedEntry(store)

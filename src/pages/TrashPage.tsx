@@ -12,6 +12,8 @@ export interface TrashPageProps {
   retentionDays: number
   /** 云端模式下加载服务端回收站失败时的提示（本地模式恒为 null） */
   loadError?: string | null
+  /** 是否走云端：页脚文案只在登录时说「从服务器一并抹掉」（匿名路径没有服务器） */
+  cloudMode?: boolean
   /** 云端模式的「重试/刷新」，未登录不传（本地数据是同步读的，无需刷新） */
   onRefresh?: () => void
   onBack: () => void
@@ -32,6 +34,7 @@ export function TrashPage(props: TrashPageProps) {
     entries,
     retentionDays,
     loadError = null,
+    cloudMode = false,
     onRefresh,
     onBack,
     onRestore,
@@ -40,11 +43,15 @@ export function TrashPage(props: TrashPageProps) {
   } = props
 
   const [emptyArmed, setEmptyArmed] = useState(false)
+  /** 正在等待二次确认的单条彻底删除 id：一次只能武装一行 */
+  const [purgeArmedId, setPurgeArmedId] = useState<string | null>(null)
   const armTimer = useRef(0)
+  const purgeTimer = useRef(0)
 
   useEffect(
     () => () => {
       window.clearTimeout(armTimer.current)
+      window.clearTimeout(purgeTimer.current)
     },
     [],
   )
@@ -63,6 +70,19 @@ export function TrashPage(props: TrashPageProps) {
     window.clearTimeout(armTimer.current)
     setEmptyArmed(false)
     onEmptyTrash()
+  }
+
+  // 单条彻底删除同样不可恢复：与「清空回收站」一致的两段式确认，误触还有后悔药
+  const handlePurge = (id: string) => {
+    if (purgeArmedId !== id) {
+      setPurgeArmedId(id)
+      window.clearTimeout(purgeTimer.current)
+      purgeTimer.current = window.setTimeout(() => setPurgeArmedId(null), EMPTY_ARM_MS)
+      return
+    }
+    window.clearTimeout(purgeTimer.current)
+    setPurgeArmedId(null)
+    onPurge(id)
   }
 
   return (
@@ -149,12 +169,19 @@ export function TrashPage(props: TrashPageProps) {
                   </button>
                   <button
                     type="button"
-                    className="btn icon history-item-delete"
-                    aria-label={`彻底删除「${entry.title}」`}
-                    title="彻底删除（不可恢复）"
-                    onClick={() => onPurge(entry.id)}
+                    className={`btn icon history-item-delete ${
+                      purgeArmedId === entry.id ? 'danger' : ''
+                    }`}
+                    aria-label={
+                      purgeArmedId === entry.id
+                        ? `确认彻底删除「${entry.title}」`
+                        : `彻底删除「${entry.title}」`
+                    }
+                    title={purgeArmedId === entry.id ? '再点一次永久删除' : '彻底删除（不可恢复）'}
+                    onClick={() => handlePurge(entry.id)}
                   >
                     <IconTrash size={13} />
+                    {purgeArmedId === entry.id && <span aria-hidden="true">确认？</span>}
                   </button>
                 </li>
               ))}
@@ -176,7 +203,11 @@ export function TrashPage(props: TrashPageProps) {
         </button>
       </footer>
 
-      <span className="history-note">彻底删除与清空回收站都不可恢复，会立即从服务器一并抹掉</span>
+      <span className="history-note">
+        {cloudMode
+          ? '彻底删除与清空回收站都不可恢复，会立即从服务器一并抹掉'
+          : '彻底删除与清空回收站都不可恢复'}
+      </span>
     </div>
   )
 }

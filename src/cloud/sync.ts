@@ -359,8 +359,11 @@ export class SyncEngine {
     // 2) 删除可能正在途中（flush 已发出请求）：登记，让 pushDeletes 在响应回来后撤销
     if (this.inFlightDeletes.has(id)) this.undoAfterDelete.add(id)
 
-    // 服务端从未见过这条（离线新建后在防抖窗口内被删）：本地恢复 + 入队新建即可
-    if (local && local.syncState !== 'local') {
+    // 服务端墓碑是权威来源：本地缓存里没有这条也必须先请服务端清墓碑。
+    // 刷新 / 换设备后下行合并已经把本地墓碑移除（mergePulled → store.remove），
+    // 此时 local 为空，若跳过 API 直接 restoreLocally 会以「条目不存在」失败——
+    // 而回收站列表来自 GET /trash，条目明明还在。
+    if (!local || local.syncState !== 'local') {
       try {
         const row = await cloudApi.restoreSnippet(id)
         this.writeRemote(serverToLocal(row))

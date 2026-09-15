@@ -738,6 +738,8 @@ describe('「已保存」片段库页面与详情页', () => {
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
     await user.click(screen.getByRole('button', { name: '回收站（1 条）' }))
     await user.click(screen.getByRole('button', { name: '彻底删除「curl 命令」' }))
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认彻底删除「curl 命令」' }))
     expect(screen.getByText('回收站是空的')).toBeInTheDocument()
     const rows = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { id: string }[]
     expect(rows).toHaveLength(0)
