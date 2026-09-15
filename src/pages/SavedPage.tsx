@@ -2,9 +2,12 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { languageLabel } from '../detection/language'
 import type { Snippet, SnippetKind } from '../storage/snippets'
 import { formatRelativeTime, historyGroupLabel } from '../utils/time'
-import type { ApiCollection } from '../cloud/api'
+import type { ApiCollection, CollectionPatch } from '../cloud/api'
+import { nextColor } from '../utils/collections'
+import { CollectionFormDialog, ColorDot } from '../components/CollectionDialogs'
+import { CollectionMoveMenu } from '../components/CollectionMoveMenu'
+import { CollectionPanel } from '../components/CollectionPanel'
 import {
-  IconClose,
   IconDownload,
   IconHistory,
   IconLock,
@@ -38,9 +41,18 @@ export interface SavedPageProps {
   collections?: ApiCollection[]
   activeCollectionId?: number | null
   onSelectCollection?: (id: number | null) => void
-  onCreateCollection?: (name: string) => Promise<void>
-  onRenameCollection?: (id: number, name: string) => Promise<void>
+  /** 每个收藏夹的条目数（对全集计数，不随筛选变化） */
+  collectionCounts?: Record<number, number>
+  /** 片段库全部条目数（「全部收藏夹」一行的计数） */
+  totalCount?: number
+  /** 返回创建出的收藏夹：行内「新建收藏夹…」创建后要把条目直接移进去 */
+  onCreateCollection?: (name: string, color: string) => Promise<ApiCollection | null>
+  onUpdateCollection?: (id: number, patch: CollectionPatch) => Promise<void>
   onDeleteCollection?: (id: number) => Promise<void>
+  /** 收藏夹排序：dir=-1 上移，1 下移 */
+  onMoveCollection?: (id: number, dir: -1 | 1) => Promise<void>
+  /** 把条目移到收藏夹（null = 未分类）：与编辑器条目栏共用同一条写回路径 */
+  onMoveEntry?: (entryId: string, collectionId: number | null) => void
 }
 
 interface SavedGroup {
@@ -64,6 +76,10 @@ const KIND_FILTERS: { id: SnippetKindFilter; label: string; en: string }[] = [
 ]
 
 const CLEAR_ARM_MS = 4000
+
+/** 匿名模式（不传云端回调）下的占位实现，省掉满屏的非空断言 */
+const noopCreate = async (): Promise<ApiCollection | null> => null
+const noopAsync = async (): Promise<void> => {}
 
 function groupEntries(entries: Snippet[]): SavedGroup[] {
   const groups: SavedGroup[] = []
@@ -97,18 +113,21 @@ export function SavedPage(props: SavedPageProps) {
     collections = [],
     activeCollectionId = null,
     onSelectCollection,
+    collectionCounts = {},
+    totalCount = 0,
     onCreateCollection,
-    onRenameCollection,
+    onUpdateCollection,
     onDeleteCollection,
+    onMoveCollection,
+    onMoveEntry,
     kindFilter,
     onKindFilterChange,
   } = props
 
   const [query, setQuery] = useState('')
   const [clearArmed, setClearArmed] = useState(false)
-  const [collectionName, setCollectionName] = useState('')
-  const [renamingId, setRenamingId] = useState<number | null>(null)
-  const [renameValue, setRenameValue] = useState('')
+  /** 行内「新建收藏夹…」：创建成功后把这条片段移进新收藏夹 */
+  const [createForEntry, setCreateForEntry] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const clearTimer = useRef(0)
 
@@ -152,19 +171,6 @@ export function SavedPage(props: SavedPageProps) {
     window.clearTimeout(clearTimer.current)
     setClearArmed(false)
     onClearAll()
-  }
-
-  const handleCreateCollection = async () => {
-    const name = collectionName.trim()
-    if (!name || !onCreateCollection) return
-    setCollectionName('')
-    await onCreateCollection(name)
-  }
-
-  const submitRename = async (id: number) => {
-    const name = renameValue.trim()
-    setRenamingId(null)
-    if (name && onRenameCollection) await onRenameCollection(id, name)
   }
 
   return (
@@ -236,70 +242,17 @@ export function SavedPage(props: SavedPageProps) {
       </div>
 
       {cloudMode && (
-        <div className="history-collections" aria-label="收藏夹">
-          <button
-            type="button"
-            className={`chip small ${activeCollectionId === null ? 'active' : ''}`}
-            onClick={() => onSelectCollection?.(null)}
-          >
-            全部收藏夹
-          </button>
-          {collections.map((c) => (
-            <span
-              key={c.id}
-              className={`collection-chip ${activeCollectionId === c.id ? 'active' : ''}`}
-            >
-              {renamingId === c.id ? (
-                <input
-                  className="collection-rename"
-                  aria-label="重命名收藏夹"
-                  value={renameValue}
-                  autoFocus
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => void submitRename(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void submitRename(c.id)
-                    if (e.key === 'Escape') setRenamingId(null)
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="collection-name"
-                  onClick={() => onSelectCollection?.(c.id)}
-                  onDoubleClick={() => {
-                    setRenamingId(c.id)
-                    setRenameValue(c.name)
-                  }}
-                  title="点击筛选；双击重命名"
-                >
-                  {c.name}
-                </button>
-              )}
-              <button
-                type="button"
-                className="collection-manage"
-                aria-label={`删除收藏夹「${c.name}」`}
-                onClick={() => void onDeleteCollection?.(c.id)}
-              >
-                <IconClose size={9} />
-              </button>
-            </span>
-          ))}
-          <span className="collection-create">
-            <input
-              type="text"
-              className="collection-input"
-              placeholder="新建收藏夹"
-              aria-label="新建收藏夹名称"
-              value={collectionName}
-              onChange={(e) => setCollectionName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleCreateCollection()
-              }}
-            />
-          </span>
-        </div>
+        <CollectionPanel
+          collections={collections}
+          counts={collectionCounts}
+          totalCount={totalCount}
+          activeId={activeCollectionId}
+          onSelect={(id) => onSelectCollection?.(id)}
+          onCreate={onCreateCollection ?? noopCreate}
+          onUpdate={onUpdateCollection ?? noopAsync}
+          onDelete={onDeleteCollection ?? noopAsync}
+          onMove={onMoveCollection ?? noopAsync}
+        />
       )}
 
       {entries.length === 0 ? (
@@ -307,12 +260,25 @@ export function SavedPage(props: SavedPageProps) {
           <span className="history-empty-mark" aria-hidden="true">
             <IconHistory size={24} />
           </span>
-          <span>还没有保存过任何内容</span>
-          <span>
-            在编辑器里点「保存」（Ctrl/Cmd+S）后，条目会出现在这里
-            <br />
-            <span className="en">Save manually from the editor</span>
-          </span>
+          {activeCollectionId !== null ? (
+            <>
+              <span>这个收藏夹还是空的</span>
+              <span>
+                选中条目行右侧的文件夹图标可以把它移动进来
+                <br />
+                <span className="en">Move items here from the library</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span>还没有保存过任何内容</span>
+              <span>
+                在编辑器里点「保存」（Ctrl/Cmd+S）后，条目会出现在这里
+                <br />
+                <span className="en">Save manually from the editor</span>
+              </span>
+            </>
+          )}
         </div>
       ) : filtered.length === 0 ? (
         <div className="history-empty">没有匹配「{query.trim()}」的片段</div>
@@ -324,72 +290,91 @@ export function SavedPage(props: SavedPageProps) {
                 <span>{group.label}</span>
                 <span className="en">{GROUP_EN[group.label]}</span>
               </li>
-              {group.items.map((entry) => (
-                <li
-                  key={entry.id}
-                  className={`history-row ${entry.id === activeId ? 'active' : ''}`}
-                >
-                  <button
-                    type="button"
-                    className="history-item"
-                    title={`${entry.title}（查看详情）`}
-                    onClick={() => onOpenDetail(entry.id)}
+              {group.items.map((entry) => {
+                const collection = collections.find((c) => c.id === entry.collectionId) ?? null
+                return (
+                  <li
+                    key={entry.id}
+                    className={`history-row ${entry.id === activeId ? 'active' : ''}`}
                   >
-                    <span className="history-item-title">{entry.title}</span>
-                    {entry.note && <span className="history-item-note">{entry.note}</span>}
-                    <span className="history-item-meta-row">
-                      <span className="history-item-meta">
-                        {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
-                        {entry.content.length} 字符
+                    <button
+                      type="button"
+                      className="history-item"
+                      title={`${entry.title}（查看详情）`}
+                      onClick={() => onOpenDetail(entry.id)}
+                    >
+                      <span className="history-item-title">{entry.title}</span>
+                      {entry.note && <span className="history-item-note">{entry.note}</span>}
+                      <span className="history-item-meta-row">
+                        <span className="history-item-meta">
+                          {formatRelativeTime(entry.updatedAt)} · {languageLabel(entry.langId)} ·{' '}
+                          {entry.content.length} 字符
+                        </span>
+                        {collection !== null && (
+                          <span className="tag collection-tag" title={`收藏夹：${collection.name}`}>
+                            <ColorDot color={collection.color} size={8} />
+                            <span className="collection-tag-name">{collection.name}</span>
+                          </span>
+                        )}
+                        {(entry.kind ?? 'command') === 'prompt' && (
+                          <span className="tag kind-prompt" aria-label="类型：Prompt">
+                            Prompt
+                          </span>
+                        )}
+                        {entry.pinned === true && (
+                          <span className="tag pinned" aria-label="已置顶">
+                            <IconPin size={9} />
+                          </span>
+                        )}
+                        {entry.localOnly === true && (
+                          <span className="tag local-only" aria-label="仅本地，不同步">
+                            <IconLock size={9} />
+                            仅本地
+                          </span>
+                        )}
+                        {entry.id === activeId && <span className="tag accent">编辑中</span>}
                       </span>
-                      {(entry.kind ?? 'command') === 'prompt' && (
-                        <span className="tag kind-prompt" aria-label="类型：Prompt">
-                          Prompt
-                        </span>
-                      )}
-                      {entry.pinned === true && (
-                        <span className="tag pinned" aria-label="已置顶">
-                          <IconPin size={9} />
-                        </span>
-                      )}
-                      {entry.localOnly === true && (
-                        <span className="tag local-only" aria-label="仅本地，不同步">
-                          <IconLock size={9} />
-                          仅本地
-                        </span>
-                      )}
-                      {entry.id === activeId && <span className="tag accent">编辑中</span>}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon history-item-open"
-                    aria-label={`在编辑器中打开「${entry.title}」`}
-                    title="在编辑器中打开"
-                    onClick={() => onOpenInEditor(entry.id)}
-                  >
-                    <IconTerminal size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn icon history-item-pin ${entry.pinned ? 'on' : ''}`}
-                    aria-label={
-                      entry.pinned ? `取消置顶「${entry.title}」` : `置顶「${entry.title}」`
-                    }
-                    onClick={() => onTogglePin(entry.id)}
-                  >
-                    <IconPin size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon history-item-delete"
-                    aria-label={`删除「${entry.title}」`}
-                    onClick={() => onDeleteEntry(entry.id)}
-                  >
-                    <IconTrash size={13} />
-                  </button>
-                </li>
-              ))}
+                    </button>
+                    {cloudMode && onMoveEntry && (
+                      <CollectionMoveMenu
+                        entryTitle={entry.title}
+                        currentId={entry.collectionId ?? null}
+                        collections={collections}
+                        counts={collectionCounts}
+                        onPick={(collectionId) => onMoveEntry(entry.id, collectionId)}
+                        onCreateRequest={() => setCreateForEntry(entry.id)}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="btn icon history-item-open"
+                      aria-label={`在编辑器中打开「${entry.title}」`}
+                      title="在编辑器中打开"
+                      onClick={() => onOpenInEditor(entry.id)}
+                    >
+                      <IconTerminal size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn icon history-item-pin ${entry.pinned ? 'on' : ''}`}
+                      aria-label={
+                        entry.pinned ? `取消置顶「${entry.title}」` : `置顶「${entry.title}」`
+                      }
+                      onClick={() => onTogglePin(entry.id)}
+                    >
+                      <IconPin size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn icon history-item-delete"
+                      aria-label={`删除「${entry.title}」`}
+                      onClick={() => onDeleteEntry(entry.id)}
+                    >
+                      <IconTrash size={13} />
+                    </button>
+                  </li>
+                )
+              })}
             </Fragment>
           ))}
         </ul>
@@ -416,6 +401,19 @@ export function SavedPage(props: SavedPageProps) {
         <span className="history-note">已登录 · 同步到自托管服务器 · 敏感条目请开「仅本地」</span>
       ) : (
         <span className="history-note">仅保存在本浏览器 · 不上传</span>
+      )}
+
+      {/* 行内「新建收藏夹…」：创建成功后直接把该条目移进去，少一次来回 */}
+      {createForEntry !== null && (
+        <CollectionFormDialog
+          collection={null}
+          defaultColor={nextColor(collections)}
+          onClose={() => setCreateForEntry(null)}
+          onSubmit={async ({ name, color }) => {
+            const created = await onCreateCollection?.(name, color)
+            if (created) onMoveEntry?.(createForEntry, created.id)
+          }}
+        />
       )}
     </div>
   )

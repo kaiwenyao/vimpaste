@@ -39,6 +39,13 @@ export interface ApiTag {
   count: number
 }
 
+/** PATCH /api/collections/:id 的请求体：字段全部可选，省略即不改 */
+export interface CollectionPatch {
+  name?: string
+  color?: string
+  order?: number
+}
+
 export interface SyncResult {
   applied: string[]
   conflicts: { id: string; server: ApiSnippet | null }[]
@@ -144,18 +151,19 @@ export const cloudApi = {
     return data
   },
 
-  async createCollection(name: string): Promise<ApiCollection> {
+  async createCollection(name: string, color?: string): Promise<ApiCollection> {
     const { data } = await request<ApiCollection>('/api/collections', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...(color ? { color } : {}) }),
     })
     return data
   },
 
-  async renameCollection(id: number, name: string): Promise<void> {
+  /** 名称 / 颜色 / 排序统一走 PATCH；只传要改的字段（省略≠清空） */
+  async updateCollection(id: number, patch: CollectionPatch): Promise<void> {
     await request(`/api/collections/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(patch),
     })
   },
 

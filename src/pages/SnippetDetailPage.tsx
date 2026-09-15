@@ -4,6 +4,8 @@ import type { Snippet } from '../storage/snippets'
 import { countWords, estimateTokens } from '../utils/textStats'
 import { formatFullTime, formatRelativeTime } from '../utils/time'
 import type { ApiCollection } from '../cloud/api'
+import { nextColor, sortCollections } from '../utils/collections'
+import { CollectionFormDialog, ColorDot } from '../components/CollectionDialogs'
 import {
   IconCheck,
   IconCopy,
@@ -41,6 +43,10 @@ export interface SnippetDetailPageProps {
   onCopy: (entry: Snippet) => void
   onTogglePin: (id: string) => void
   onDelete: (id: string) => void
+  /** 云端模式：把条目移到收藏夹（null = 未分类）；不传则收藏夹是只读文本 */
+  onMoveEntry?: (entryId: string, collectionId: number | null) => void
+  /** 云端模式：详情页就地新建收藏夹（创建成功即把该条目移进去） */
+  onCreateCollection?: (name: string, color: string) => Promise<ApiCollection | null>
 }
 
 /**
@@ -55,8 +61,11 @@ export function SnippetDetailPage({
   onCopy,
   onTogglePin,
   onDelete,
+  onMoveEntry,
+  onCreateCollection,
 }: SnippetDetailPageProps) {
   const [clearArmed, setClearArmed] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
   const clearTimer = useRef(0)
 
   // 切换到另一条详情时重置删除确认状态
@@ -86,8 +95,11 @@ export function SnippetDetailPage({
   }
 
   const lines = entry.content.split('\n').length
-  const collection = collections.find((c) => c.id === entry.collectionId) ?? null
+  const ordered = sortCollections(collections)
+  const collection = ordered.find((c) => c.id === entry.collectionId) ?? null
   const isPrompt = (entry.kind ?? 'command') === 'prompt'
+  // 未登录（不传回调）时保持只读展示：匿名模式没有收藏夹这回事
+  const editable = onMoveEntry !== undefined && onCreateCollection !== undefined
 
   return (
     <div className="page detail-page">
@@ -180,7 +192,37 @@ export function SnippetDetailPage({
           <InfoRow label="备注">
             {entry.note ? <span className="detail-note">{entry.note}</span> : '无'}
           </InfoRow>
-          <InfoRow label="收藏夹">{collection ? collection.name : '无'}</InfoRow>
+          <InfoRow label="收藏夹">
+            {editable ? (
+              <span className="detail-collection">
+                {collection && <ColorDot color={collection.color} />}
+                <select
+                  className="select small detail-collection-select"
+                  aria-label="所属收藏夹"
+                  value={collection?.id ?? ''}
+                  onChange={(e) => {
+                    if (e.target.value === '__new__') {
+                      setCreateOpen(true)
+                      return
+                    }
+                    onMoveEntry?.(entry.id, e.target.value === '' ? null : Number(e.target.value))
+                  }}
+                >
+                  <option value="">未分类</option>
+                  {ordered.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                  <option value="__new__">＋ 新建收藏夹…</option>
+                </select>
+              </span>
+            ) : collection ? (
+              collection.name
+            ) : (
+              '无'
+            )}
+          </InfoRow>
           <InfoRow label="置顶">{entry.pinned ? '是' : '否'}</InfoRow>
           <InfoRow label="同步状态">
             {entry.localOnly && <IconLock size={11} />} {syncLabel(entry)}
@@ -191,6 +233,18 @@ export function SnippetDetailPage({
       <section className="detail-content-wrap" aria-label="片段内容">
         <pre className="detail-content">{entry.content}</pre>
       </section>
+
+      {createOpen && (
+        <CollectionFormDialog
+          collection={null}
+          defaultColor={nextColor(collections)}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={async ({ name, color }) => {
+            const created = await onCreateCollection?.(name, color)
+            if (created) onMoveEntry?.(entry.id, created.id)
+          }}
+        />
+      )}
     </div>
   )
 }

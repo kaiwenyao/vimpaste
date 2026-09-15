@@ -47,7 +47,7 @@ describe('cloudApi request 头部', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await cloudApi.createCollection('work')
-    await cloudApi.renameCollection(3, 'new name')
+    await cloudApi.updateCollection(3, { name: 'new name', color: '#7d9463', order: 2 })
 
     const postInit = fetchMock.mock.calls[0][1] as RequestInit
     expect(new Headers(postInit.headers).get('content-type')).toBe('application/json')
