@@ -365,3 +365,198 @@ describe.skipIf(!dbUp)('Snippet API · 配额', () => {
     expect((await make(4)).statusCode).toBe(201)
   })
 })
+
+/**
+ * 回收站端点契约：列表 / 恢复 / 彻底删除 / 清空，以及 `/trash` 与 `/:id` 的路由优先级。
+ * 这些用例只在测试库可达时运行（数据库不可达时整组跳过，见 helpers.databaseAvailable）。
+ */
+describe.skipIf(!dbUp)('Snippet 回收站 API', () => {
+  const ctx: TestContext = setupTestContext()
+  let alice: Awaited<ReturnType<typeof createUserAndLogin>>
+  let bob: Awaited<ReturnType<typeof createUserAndLogin>>
+
+  beforeEach(async () => {
+    await truncateAll(ctx.prisma)
+    alice = await createUserAndLogin(ctx, 'alice@example.com')
+    bob = await createUserAndLogin(ctx, 'bob@example.com')
+  })
+
+  const createAs = (cookie: string, payload: Record<string, unknown> = {}) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: '/api/snippets',
+      headers: { cookie },
+      payload: snippetPayload(payload),
+    })
+
+  const deleteAs = (cookie: string, id: string) =>
+    ctx.app.inject({ method: 'DELETE', url: `/api/snippets/${id}`, headers: { cookie } })
+
+  const getTrash = (cookie: string) =>
+    ctx.app.inject({ method: 'GET', url: '/api/snippets/trash', headers: { cookie } })
+
+  const restoreAs = (cookie: string, id: string) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/snippets/${id}/restore`,
+      headers: { cookie },
+    })
+
+  const purgeAs = (cookie: string, id: string) =>
+    ctx.app.inject({ method: 'DELETE', url: `/api/snippets/${id}/purge`, headers: { cookie } })
+
+  it('未授权访问回收站返回 401', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/snippets/trash' })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('GET /trash 只列墓碑、按删除时间倒序，并回传保留天数（30）', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    await createAs(alice.cookie, { id: uuid(2) })
+    await createAs(alice.cookie, { id: uuid(3) })
+    await deleteAs(alice.cookie, uuid(1))
+    await deleteAs(alice.cookie, uuid(2))
+
+    const res = await getTrash(alice.cookie)
+    expect(res.statusCode).toBe(200)
+    const data = res.json().data as { id: string; deletedAt: number }[]
+    expect(data.map((s) => s.id).sort()).toEqual([uuid(1), uuid(2)])
+    // 只在用的条目（uuid(3)）不进回收站
+    expect(data.some((s) => s.id === uuid(3))).toBe(false)
+    // 按删除时间倒序（同毫秒删除时允许并列，因此只断言非递增）
+    const times = data.map((s) => s.deletedAt)
+    expect([...times].sort((a, b) => b - a)).toEqual(times)
+    expect(res.json().meta).toMatchObject({ total: 2, retentionDays: 30 })
+  })
+
+  it('路由冲突：DELETE /trash 命中静态路由，空回收站返回 200 count 0（不会被 /:id 当作非法 uuid 拒绝）', async () => {
+    const empty = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/snippets/trash',
+      headers: { cookie: alice.cookie },
+    })
+    expect(empty.statusCode).toBe(200)
+    expect(empty.json().data).toEqual({ count: 0 })
+
+    await createAs(alice.cookie, { id: uuid(1) })
+    await createAs(alice.cookie, { id: uuid(2) })
+    await deleteAs(alice.cookie, uuid(1))
+    await deleteAs(alice.cookie, uuid(2))
+
+    const cleared = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/snippets/trash',
+      headers: { cookie: alice.cookie },
+    })
+    expect(cleared.statusCode).toBe(200)
+    expect(cleared.json().data).toEqual({ count: 2 })
+    expect(await ctx.prisma.snippet.count()).toBe(0)
+    expect((await getTrash(alice.cookie)).json().data).toHaveLength(0)
+  })
+
+  it('清空回收站不误伤在用条目', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    await createAs(alice.cookie, { id: uuid(2) })
+    await deleteAs(alice.cookie, uuid(1))
+
+    await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/snippets/trash',
+      headers: { cookie: alice.cookie },
+    })
+    const rows = await ctx.prisma.snippet.findMany()
+    expect(rows.map((r) => r.id)).toEqual([uuid(2)])
+    expect(rows[0].deletedAt).toBeNull()
+  })
+
+  it('POST /:id/restore：deletedAt 归 null，updatedAt / syncedAt 同步推进，其它设备按旧游标也能拉到恢复', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    await deleteAs(alice.cookie, uuid(1))
+    const tombstone = await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(1) } })
+
+    const res = await restoreAs(alice.cookie, uuid(1))
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.deletedAt).toBeNull()
+
+    const restored = await ctx.prisma.snippet.findUniqueOrThrow({ where: { id: uuid(1) } })
+    expect(restored.deletedAt).toBeNull()
+    // 两个游标都必须推进：只看 updatedAt 的话游标较新的设备永远收不到「恢复」
+    expect(restored.updatedAt.getTime()).toBeGreaterThan(tombstone.updatedAt.getTime())
+    expect(restored.syncedAt.getTime()).toBeGreaterThan(tombstone.syncedAt.getTime())
+
+    // 模拟「游标停在删除那一刻」的另一台设备
+    const sync = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/snippets/sync',
+      headers: { cookie: alice.cookie },
+      payload: { since: tombstone.syncedAt.getTime(), changes: [] },
+    })
+    expect(sync.statusCode).toBe(200)
+    const pulled = (sync.json().data.pulled as { id: string; deletedAt: number | null }[]).find(
+      (s) => s.id === uuid(1),
+    )
+    expect(pulled).toBeDefined()
+    expect(pulled?.deletedAt).toBeNull()
+
+    // 恢复后回到片段库列表
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/snippets',
+      headers: { cookie: alice.cookie },
+    })
+    expect(list.json().data.map((s: { id: string }) => s.id)).toEqual([uuid(1)])
+  })
+
+  it('restore 幂等：未删除的条目重复恢复返回当前状态；未知 id / 他人条目 404', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    const notTrashed = await restoreAs(alice.cookie, uuid(1))
+    expect(notTrashed.statusCode).toBe(200)
+    expect(notTrashed.json().data.deletedAt).toBeNull()
+
+    await deleteAs(alice.cookie, uuid(1))
+    expect((await restoreAs(alice.cookie, uuid(1))).statusCode).toBe(200)
+    expect((await restoreAs(alice.cookie, uuid(1))).statusCode).toBe(200)
+    const rows = await ctx.prisma.snippet.findMany()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].deletedAt).toBeNull()
+
+    expect((await restoreAs(alice.cookie, uuid(9))).statusCode).toBe(404)
+    expect((await restoreAs(bob.cookie, uuid(1))).statusCode).toBe(404)
+  })
+
+  it('DELETE /:id/purge：墓碑被硬删；在用条目 409 NOT_TRASHED；他人条目 404', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    await createAs(alice.cookie, { id: uuid(2) })
+    await deleteAs(alice.cookie, uuid(1))
+
+    const purged = await purgeAs(alice.cookie, uuid(1))
+    expect(purged.statusCode).toBe(200)
+    expect(purged.json().data).toEqual({ id: uuid(1), purged: true })
+    expect(await ctx.prisma.snippet.count()).toBe(1)
+
+    const live = await purgeAs(alice.cookie, uuid(2))
+    expect(live.statusCode).toBe(409)
+    expect(live.json().error.code).toBe('NOT_TRASHED')
+
+    expect((await purgeAs(alice.cookie, uuid(9))).statusCode).toBe(404)
+    await deleteAs(alice.cookie, uuid(2))
+    expect((await purgeAs(bob.cookie, uuid(2))).statusCode).toBe(404)
+    expect(await ctx.prisma.snippet.count()).toBe(1) // Bob 删不掉 Alice 的墓碑
+  })
+
+  it('回收站按用户隔离：A 的墓碑不出现在 B 的回收站，B 也清不掉', async () => {
+    await createAs(alice.cookie, { id: uuid(1) })
+    await deleteAs(alice.cookie, uuid(1))
+
+    expect((await getTrash(bob.cookie)).json().data).toHaveLength(0)
+    expect((await getTrash(bob.cookie)).json().meta.total).toBe(0)
+
+    const clearedByBob = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/snippets/trash',
+      headers: { cookie: bob.cookie },
+    })
+    expect(clearedByBob.json().data).toEqual({ count: 0 })
+    expect(await ctx.prisma.snippet.count()).toBe(1)
+  })
+})

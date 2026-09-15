@@ -648,7 +648,7 @@ describe('「已保存」片段库页面与详情页', () => {
     expect(screen.getAllByText('已保存').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('片段库中删除单条与清空全部', async () => {
+  it('片段库中删除单条与清空全部：内容进回收站而不是立即消失', async () => {
     const user = userEvent.setup()
     localStorage.setItem(
       HISTORY_KEY,
@@ -674,13 +674,189 @@ describe('「已保存」片段库页面与详情页', () => {
     render(<App />)
     await openSaved(user)
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
-    expect(localStorage.getItem(HISTORY_KEY)).not.toContain('curl example.com')
-    expect(localStorage.getItem(HISTORY_KEY)).toContain('docker ps')
 
-    await user.click(screen.getByRole('button', { name: '清空全部片段' }))
-    await user.click(screen.getByRole('button', { name: '确认清空全部片段' }))
-    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
+    // 列表里消失了，但内容仍在存储里（deletedAt 墓碑）：这正是回收站的意义
+    expect(screen.queryByText('curl 命令')).not.toBeInTheDocument()
+    const afterDelete = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      id: string
+      content: string
+      deletedAt: number | null
+    }[]
+    expect(afterDelete).toHaveLength(2)
+    expect(afterDelete.find((s) => s.id === 'a')).toMatchObject({
+      content: 'curl example.com',
+      deletedAt: expect.any(Number),
+    })
+    expect(afterDelete.find((s) => s.id === 'b')?.deletedAt).toBeNull()
+
+    // 清空全部片段：也是在用条目进回收站，不是抹掉内容
+    await user.click(screen.getByRole('button', { name: '清空全部片段（可在回收站恢复）' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部片段（可在回收站恢复）' }))
     expect(screen.getByText('还没有保存过任何内容')).toBeInTheDocument()
+    const afterClear = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      content: string
+      deletedAt: number | null
+    }[]
+    expect(afterClear).toHaveLength(2)
+    expect(afterClear.every((s) => s.deletedAt !== null)).toBe(true)
+    expect(JSON.stringify(afterClear)).toContain('curl example.com')
+  })
+
+  it('回收站往返：删除 → 回收站可见 → 恢复回片段库 → 彻底删除才真的消失', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        {
+          id: 'a',
+          title: 'curl 命令',
+          content: 'curl example.com',
+          langId: 'shell',
+          createdAt: 1,
+          updatedAt: Date.now(),
+        },
+      ]),
+    )
+    render(<App />)
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+
+    // 入口角标显示回收站里有 1 条，点进回收站能看到它
+    await user.click(screen.getByRole('button', { name: '回收站（1 条）' }))
+    expect(await screen.findByRole('heading', { name: '回收站' })).toBeInTheDocument()
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+    expect(screen.getByText(/剩余 30 天/)).toBeInTheDocument()
+
+    // 恢复：回到片段库
+    await user.click(screen.getByRole('button', { name: '恢复「curl 命令」' }))
+    expect(screen.getByText('回收站是空的')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '返回片段库' }))
+    await screen.findByRole('heading', { name: '已保存' })
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+
+    // 再删一次 → 这次彻底删除
+    await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+    await user.click(screen.getByRole('button', { name: '回收站（1 条）' }))
+    await user.click(screen.getByRole('button', { name: '彻底删除「curl 命令」' }))
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认彻底删除「curl 命令」' }))
+    expect(screen.getByText('回收站是空的')).toBeInTheDocument()
+    const rows = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { id: string }[]
+    expect(rows).toHaveLength(0)
+  })
+
+  it('回收站里的条目刷新后仍在（#/trash 深链接可达），清空回收站后再也看不到', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        {
+          id: 'a',
+          title: 'curl 命令',
+          content: 'curl example.com',
+          langId: 'shell',
+          createdAt: 1,
+          updatedAt: Date.now(),
+        },
+      ]),
+    )
+    render(<App />)
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+
+    // 直接访问 #/trash（刷新/收藏夹直达的路径）
+    window.location.hash = '#/trash'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    expect(await screen.findByRole('heading', { name: '回收站' })).toBeInTheDocument()
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+
+    // 清空回收站需二次确认
+    await user.click(screen.getByRole('button', { name: '清空回收站' }))
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认清空回收站' }))
+    expect(screen.getByText('回收站是空的')).toBeInTheDocument()
+
+    // 彻底没了：连墓碑都不剩
+    const rows = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { id: string }[]
+    expect(rows).toHaveLength(0)
+  })
+
+  it('片段库已满时恢复被拒绝，不挤掉另一条在用条目', async () => {
+    const user = userEvent.setup()
+    const now = Date.now()
+    const active = Array.from({ length: 30 }, (_, i) => ({
+      id: `a${i}`,
+      title: `在用 ${i}`,
+      content: `content-${i}`,
+      langId: 'plaintext',
+      createdAt: now,
+      updatedAt: now - i,
+    }))
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        ...active,
+        {
+          id: 'trashed',
+          title: '被删的',
+          content: 'should-stay-in-trash',
+          langId: 'plaintext',
+          createdAt: now,
+          updatedAt: now - 1000,
+          deletedAt: now - 1000,
+        },
+      ]),
+    )
+    render(<App />)
+    window.location.hash = '#/trash'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    expect(await screen.findByRole('heading', { name: '回收站' })).toBeInTheDocument()
+    expect(screen.getByText('被删的')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '恢复「被删的」' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('片段库已满，请先删一条再恢复')
+    expect(screen.getByText('被删的')).toBeInTheDocument()
+
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      id: string
+      deletedAt: number | null
+    }[]
+    expect(stored.filter((s) => s.deletedAt == null)).toHaveLength(30)
+    expect(stored.find((s) => s.id === 'a29')).toBeDefined()
+    expect(stored.find((s) => s.id === 'trashed')?.deletedAt).toEqual(expect.any(Number))
+  })
+
+  it('打开应用时清掉超过 30 天的墓碑（到期自动删除，本地路径靠惰性清理）', async () => {
+    const DAY = 24 * 60 * 60 * 1000
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([
+        {
+          id: 'expired',
+          title: '31 天前删的',
+          content: 'old stuff',
+          langId: 'shell',
+          createdAt: 1,
+          updatedAt: 2,
+          deletedAt: Date.now() - 31 * DAY,
+        },
+        {
+          id: 'fresh',
+          title: '今天删的',
+          content: 'new stuff',
+          langId: 'shell',
+          createdAt: 3,
+          updatedAt: 4,
+          deletedAt: Date.now() - 1000,
+        },
+      ]),
+    )
+    render(<App />)
+    // 加载即清理：不用等定时器
+    await waitFor(() => {
+      const rows = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { id: string }[]
+      expect(rows.map((r) => r.id)).toEqual(['fresh'])
+    })
   })
 
   it('保存 → 刷新：编辑器为空，片段仍在库中且可恢复', async () => {

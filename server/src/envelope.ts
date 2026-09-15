@@ -8,11 +8,17 @@ export interface ApiErrorBody {
   message: string
 }
 
-export type ApiResponse<T> =
-  | { ok: true; data: T; meta?: { total: number; cursor?: string } }
-  | { ok: false; error: ApiErrorBody }
+export interface ResponseMeta {
+  total: number
+  cursor?: string
+  /** 回收站保留天数：客户端据此显示「剩余 N 天」，不把 30 硬编码在 UI 里 */
+  retentionDays?: number
+}
 
-export function ok<T>(data: T, meta?: { total: number; cursor?: string }): ApiResponse<T> {
+export type ApiResponse<T> =
+  { ok: true; data: T; meta?: ResponseMeta } | { ok: false; error: ApiErrorBody }
+
+export function ok<T>(data: T, meta?: ResponseMeta): ApiResponse<T> {
   return meta ? { ok: true, data, meta } : { ok: true, data }
 }
 

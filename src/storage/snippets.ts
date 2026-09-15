@@ -41,6 +41,34 @@ export const MAX_LOCAL_SNIPPETS = 30
 /** 登录用户本地缓存上限（plan-v2-accounts.md §5.3） */
 export const MAX_CACHED_SNIPPETS = 500
 
+/**
+ * 片段库已满时拒绝从回收站恢复。
+ * 若仍写入，saveSnippetsTo 会按 updatedAt 截断 active，挤掉的是另一条在用条目，
+ * 而且不进回收站——用户点「恢复」却丢掉了别的内容。
+ */
+export const RESTORE_CAP_MESSAGE = '片段库已满，请先删一条再恢复'
+
+export class RestoreCapError extends Error {
+  constructor() {
+    super(RESTORE_CAP_MESSAGE)
+    this.name = 'RestoreCapError'
+  }
+}
+
+/**
+ * 回收站保留天数。与服务端 TOMBSTONE_RETENTION_DAYS 的默认值一致：
+ * 两条路径（未登录 / 登录）对用户必须是同一个承诺——「删了还能找回 30 天」。
+ */
+export const TRASH_RETENTION_DAYS = 30
+export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
+/**
+ * 匿名路径的回收站上限。与 active 的 30 条**分开计算**：
+ * 若共用同一个额度，删满 30 条会把仍在用的条目挤出存储——「删除」变成「清空整个库」。
+ */
+export const MAX_LOCAL_TRASH_SNIPPETS = 30
+/** 登录用户本地缓存里的回收站上限（云端墓碑的本地镜像） */
+export const MAX_CACHED_TRASH_SNIPPETS = 200
+
 /** 与 v1 一致的单条上限：单条内容超过时不保存 */
 export const SNIPPET_MAX_CHARS = 100_000
 
@@ -117,11 +145,14 @@ function sanitizeNote(value: unknown): string | undefined {
 export interface SnippetStorageConfig {
   key: string
   maxEntries: number
+  /** 回收站墓碑上限：与 maxEntries 分开计算，墓碑绝不占用 active 名额 */
+  maxTrashEntries: number
 }
 
 export const LOCAL_SNIPPET_STORAGE: SnippetStorageConfig = {
   key: LOCAL_STORAGE_KEY,
   maxEntries: MAX_LOCAL_SNIPPETS,
+  maxTrashEntries: MAX_LOCAL_TRASH_SNIPPETS,
 }
 
 /** 登录用户的本地缓存存储：键按 user.id 隔离 */
@@ -129,11 +160,71 @@ export function cloudCacheStorage(userId: number): SnippetStorageConfig {
   return {
     key: `${CLOUD_CACHE_STORAGE_PREFIX}.${userId}`,
     maxEntries: MAX_CACHED_SNIPPETS,
+    maxTrashEntries: MAX_CACHED_TRASH_SNIPPETS,
   }
 }
 
 function sortSnippets(list: Snippet[]): Snippet[] {
   return [...list].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** 回收站排序：按删除时间倒序（最近删的在最上面），与列表展示一致 */
+function sortTrash(list: Snippet[]): Snippet[] {
+  return [...list].sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0))
+}
+
+/** 是否为回收站里的墓碑条目 */
+export function isTrashed(snippet: Snippet): boolean {
+  return snippet.deletedAt != null
+}
+
+/** 在用条目是否已达上限：满了就不能再从回收站恢复（否则会挤掉另一条） */
+export function restoreBlockedByCap(entries: Snippet[], maxEntries: number): boolean {
+  return entries.filter((s) => !isTrashed(s)).length >= maxEntries
+}
+
+/** 墓碑是否已到期（保留期满即彻底清除） */
+export function isTrashExpired(snippet: Snippet, now = Date.now()): boolean {
+  return snippet.deletedAt != null && now - snippet.deletedAt >= TRASH_RETENTION_MS
+}
+
+/**
+ * 清掉已到期的墓碑。本地路径没有定时任务，靠「打开应用 / 读存储」时惰性执行；
+ * 云端路径的服务端另有每日硬删任务，这里只清理本地缓存镜像。
+ */
+export function purgeExpiredTombstones(entries: Snippet[], now = Date.now()): Snippet[] {
+  return entries.filter((s) => !isTrashExpired(s, now))
+}
+
+/**
+ * 回收站里的剩余天数（0 = 今天到期）；负数/非法值按 0 处理。
+ * retentionDays 默认取客户端常量，云端传入服务端回传的实际配置（自托管可改）。
+ */
+export function trashDaysLeft(
+  deletedAt: number,
+  now = Date.now(),
+  retentionDays = TRASH_RETENTION_DAYS,
+): number {
+  const remaining = retentionDays * 24 * 60 * 60 * 1000 - (now - deletedAt)
+  return remaining <= 0 ? 0 : Math.ceil(remaining / (24 * 60 * 60 * 1000))
+}
+
+/** active / 回收站分桶：各自独立限额，并顺带清掉到期墓碑 */
+export function splitByTrash(
+  entries: Snippet[],
+  config: Pick<SnippetStorageConfig, 'maxEntries' | 'maxTrashEntries'>,
+  now = Date.now(),
+): { active: Snippet[]; trash: Snippet[] } {
+  const fresh = purgeExpiredTombstones(entries, now)
+  return {
+    active: sortSnippets(fresh.filter((s) => !isTrashed(s))).slice(0, config.maxEntries),
+    trash: sortTrash(fresh.filter(isTrashed)).slice(0, config.maxTrashEntries),
+  }
+}
+
+/** 回收站里的墓碑（供 UI 展示；顺序按删除时间倒序） */
+export function trashedSnippets(entries: Snippet[], now = Date.now()): Snippet[] {
+  return sortTrash(purgeExpiredTombstones(entries, now).filter(isTrashed))
 }
 
 /** 读 + 清洗 + 排序 + 截断；损坏数据静默降级为空列表（与 v1 行为一致） */
@@ -144,7 +235,9 @@ export function loadSnippetsFrom(config: SnippetStorageConfig): Snippet[] {
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     const list = parsed.map(sanitizeSnippet).filter((s): s is Snippet => s !== null)
-    return sortSnippets(list).slice(0, config.maxEntries)
+    // 到期墓碑在读取时顺带清除：用户下次打开应用就看不到它们了
+    const { active, trash } = splitByTrash(list, config)
+    return [...active, ...trash]
   } catch {
     return []
   }
@@ -152,9 +245,11 @@ export function loadSnippetsFrom(config: SnippetStorageConfig): Snippet[] {
 
 /** 覆盖式写入（含墓碑，供云端缓存持久化）；容量不足时从最旧开始丢弃重试 */
 export function saveSnippetsTo(config: SnippetStorageConfig, entries: Snippet[]): void {
-  let list = sortSnippets(
+  const { active, trash } = splitByTrash(
     entries.filter((s) => s.content !== '' && s.content.length <= SNIPPET_MAX_CHARS),
-  ).slice(0, config.maxEntries)
+    config,
+  )
+  let list = [...active, ...trash]
   while (list.length > 0) {
     try {
       localStorage.setItem(config.key, JSON.stringify(list))
@@ -173,6 +268,46 @@ export function saveSnippetsTo(config: SnippetStorageConfig, entries: Snippet[])
 /** 插入或更新（按 updatedAt 置顶）；截断交给 saveSnippetsTo */
 export function upsertSnippet(entries: Snippet[], snippet: Snippet): Snippet[] {
   return sortSnippets([snippet, ...entries.filter((e) => e.id !== snippet.id)])
+}
+
+/**
+ * 删除进回收站：只写墓碑，内容原样保留（绝不丢字），updatedAt 不动——
+ * 墓碑的「时间」是 deletedAt，改 updatedAt 会让服务端同步把它当成一次内容更新。
+ */
+export function markTrashed(entries: Snippet[], id: string, now = Date.now()): Snippet[] {
+  return entries.map((s) => (s.id === id && s.deletedAt == null ? { ...s, deletedAt: now } : s))
+}
+
+/**
+ * 从回收站恢复：清墓碑并把 updatedAt 推到当前时刻——
+ * 恢复后的条目回到片段库列表顶部（用户刚做的事就该在最上面）。
+ */
+export function markRestored(entries: Snippet[], id: string, now = Date.now()): Snippet[] {
+  return sortSnippets(
+    entries.map((s) => (s.id === id ? { ...s, deletedAt: null, updatedAt: now } : s)),
+  )
+}
+
+/** 彻底删除：从列表里移除（回收站的单条清除 / 清空 / 到期清理共用） */
+export function dropSnippets(entries: Snippet[], ids: readonly string[]): Snippet[] {
+  const drop = new Set(ids)
+  return entries.filter((s) => !drop.has(s.id))
+}
+
+/**
+ * 存储里实际落盘的条目数（读不出来时返回 null）。
+ * 用于判断启动时的清理结果是否需要写回：到期墓碑被 loadSnippetsFrom 过滤掉后
+ * 如果不写回，过期数据会一直占着 localStorage 额度。
+ */
+export function storedEntryCount(config: SnippetStorageConfig): number | null {
+  try {
+    const raw = localStorage.getItem(config.key)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.length : null
+  } catch {
+    return null
+  }
 }
 
 /**

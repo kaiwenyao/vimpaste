@@ -168,19 +168,30 @@ test.describe('手动保存与片段库', () => {
     await expect(saved.getByText(/没有匹配「不存在的命令」的片段/)).toBeVisible()
     await saved.getByRole('textbox', { name: '搜索已保存片段' }).fill('')
 
-    // 删除单条
+    // 删除单条：从列表消失，但内容仍在存储里（进回收站，30 天内可恢复）
     await saved.getByRole('button', { name: /删除「curl -sfL/ }).click()
     await expect(saved.getByText('还没有保存过任何内容')).toBeVisible()
-    expect(await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)).toBeNull()
+    const afterDelete = await page.evaluate(
+      (k) => JSON.parse(localStorage.getItem(k) ?? '[]') as { deletedAt: number | null }[],
+      HISTORY_KEY,
+    )
+    expect(afterDelete).toHaveLength(1)
+    expect(afterDelete[0].deletedAt).not.toBeNull()
 
-    // 重新入库后清空全部（二次确认）
+    // 重新入库后清空全部（二次确认）：也是在用条目进回收站，不再是直接抹掉
     await page.locator('.saved-page').getByRole('button', { name: '返回编辑器' }).click()
     await setDoc(page, 'echo hello')
     await saveViaToolbar(page)
     const reopened = await openSaved(page)
-    await reopened.getByRole('button', { name: '清空全部片段' }).click()
-    await reopened.getByRole('button', { name: '确认清空全部片段' }).click()
-    expect(await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)).toBeNull()
+    await reopened.getByRole('button', { name: '清空全部片段（可在回收站恢复）' }).click()
+    await reopened.getByRole('button', { name: '确认清空全部片段（可在回收站恢复）' }).click()
+    const afterClear = await page.evaluate(
+      (k) => JSON.parse(localStorage.getItem(k) ?? '[]') as { deletedAt: number | null }[],
+      HISTORY_KEY,
+    )
+    // 两条都在回收站里（不是被删掉），列表为空
+    expect(afterClear).toHaveLength(2)
+    expect(afterClear.every((s) => s.deletedAt !== null)).toBe(true)
   })
 
   test('hash 路由：#/saved 与 #/saved/:id 直达，刷新后保持', async ({ page }) => {

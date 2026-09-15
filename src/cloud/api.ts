@@ -66,14 +66,14 @@ export class CloudApiError extends Error {
 interface Envelope<T> {
   ok: boolean
   data?: T
-  meta?: { total: number; cursor?: string }
+  meta?: { total: number; cursor?: string; retentionDays?: number }
   error?: { code: string; message: string }
 }
 
 async function request<T>(
   path: string,
   init: RequestInit = {},
-): Promise<{ data: T; meta?: { total: number; cursor?: string } }> {
+): Promise<{ data: T; meta?: { total: number; cursor?: string; retentionDays?: number } }> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -144,6 +144,36 @@ export const cloudApi = {
 
   async deleteSnippet(id: string): Promise<void> {
     await request(`/api/snippets/${id}`, { method: 'DELETE' })
+  },
+
+  /**
+   * 回收站列表。服务端把墓碑全量回传（单页上限 200），并告知部署实际配置的
+   * 保留天数——UI 要显示「剩余 N 天」，不能把 30 写死在客户端。
+   */
+  async trash(): Promise<{ items: ApiSnippet[]; retentionDays: number }> {
+    const { data, meta } = await request<ApiSnippet[]>('/api/snippets/trash')
+    return { items: data, retentionDays: meta?.retentionDays ?? 30 }
+  },
+
+  /** 从回收站恢复：服务端清墓碑并同时推进 updatedAt / syncedAt，其它设备才拉得到 */
+  async restoreSnippet(id: string): Promise<ApiSnippet> {
+    // 带 body 的 POST：服务端不需要请求体，但空 body + JSON 头会被解析器拒绝
+    const { data } = await request<ApiSnippet>(`/api/snippets/${id}/restore`, {
+      method: 'POST',
+      body: '{}',
+    })
+    return data
+  },
+
+  /** 彻底删除单条墓碑（不可恢复）；服务端对在用条目返回 409 NOT_TRASHED */
+  async purgeSnippet(id: string): Promise<void> {
+    await request(`/api/snippets/${id}/purge`, { method: 'DELETE' })
+  },
+
+  /** 清空回收站，返回被物理删除的条数 */
+  async emptyTrash(): Promise<number> {
+    const { data } = await request<{ count: number }>('/api/snippets/trash', { method: 'DELETE' })
+    return data.count
   },
 
   async collections(): Promise<ApiCollection[]> {

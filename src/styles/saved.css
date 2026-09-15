@@ -562,3 +562,93 @@
     display: none;
   }
 }
+
+/* ---------- 回收站（#/trash） ----------
+   复用片段库的页面骨架与列表行，只补三处差异：
+   1. 行不是「点进详情」的入口，因此取消指针与悬停高亮；
+   2. 顶部的保留期说明；
+   3. 「恢复」按钮常显（回收站里最重要的动作不该藏在悬停后面）。 */
+
+.trash-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.trash-error {
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 12px;
+}
+
+/* 回收站行不可点击：它是待处置列表，不是导航入口 */
+.trash-item {
+  cursor: default;
+}
+
+.trash-row {
+  align-items: center;
+}
+
+/* 单条彻底删除的两段式确认：武装后按钮展开显示「确认？」并常显危险色 */
+.history-item-delete.danger {
+  width: auto;
+  min-width: 26px;
+  padding: 0 8px;
+  gap: 4px;
+  opacity: 1;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
+.trash-list .history-item-meta {
+  white-space: normal;
+}
+
+.trash-restore {
+  align-self: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+/* 「恢复」在回收站里是主操作：常显并可辨认，不随悬停出现 */
+.trash-restore:hover:not(:disabled) {
+  background: var(--sage-soft);
+  color: var(--sage-ink);
+}
+
+/* 片段库页脚上的回收站入口角标 */
+.trash-entry-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-control);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  /* 窄屏：恢复按钮只留图标，把宽度让给标题与剩余天数 */
+  .trash-restore span[aria-hidden='true'] {
+    display: none;
+  }
+
+  .trash-restore {
+    width: 32px;
+    justify-content: center;
+    padding: 0;
+  }
+}

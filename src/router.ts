@@ -1,5 +1,5 @@
 /**
- * 极简 hash 路由：#/（编辑器）、#/saved（片段库）、#/saved/:id（条目详情）。
+ * 极简 hash 路由：#/（编辑器）、#/saved（片段库）、#/saved/:id（条目详情）、#/trash（回收站）。
  * 用 hash 而不是 History API：GitHub Pages 子路径部署无需服务端重写，
  * 浏览器的前进/后退键天然可用。编辑器内容不写入路由，只表达视图位置。
  */
@@ -9,11 +9,14 @@ export type Route =
   | { view: 'editor' }
   | { view: 'saved' }
   | { view: 'detail'; id: string }
+  | { view: 'trash' }
 
 export const SAVED_PATH = '/saved'
+export const TRASH_PATH = '/trash'
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#/, '')
+  if (path === TRASH_PATH) return { view: 'trash' }
   if (path.startsWith(`${SAVED_PATH}/`)) {
     const id = decodeURIComponent(path.slice(SAVED_PATH.length + 1))
     if (id !== '') return { view: 'detail', id }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalSnippetStore } from '../../src/storage/SnippetStore'
-import { LOCAL_SNIPPET_STORAGE, cloudCacheStorage } from '../../src/storage/snippets'
+import { LOCAL_SNIPPET_STORAGE, cloudCacheStorage, RestoreCapError } from '../../src/storage/snippets'
 import type { Snippet } from '../../src/storage/snippets'
 
 const CLOUD_CACHE_STORAGE = cloudCacheStorage(7)
@@ -67,5 +67,168 @@ describe('LocalSnippetStore（SnippetStore 抽象的本地实现）', () => {
     )
     const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
     expect(store.current()[0]).toMatchObject({ id: 'old', kind: 'command' })
+  })
+})
+
+describe('LocalSnippetStore（回收站：墓碑保留 30 天）', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const KEY = LOCAL_SNIPPET_STORAGE.key
+
+  function stored(): Snippet[] {
+    return JSON.parse(localStorage.getItem(KEY) ?? '[]') as Snippet[]
+  }
+
+  it('trash：条目从片段库消失但仍在 localStorage 里，deletedAt 非空', () => {
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'a', content: 'echo hi' }))
+    store.trash('a')
+
+    expect(store.current()).toHaveLength(1) // 快照仍含墓碑（UI 用它派生回收站视图）
+    expect(store.trashEntries()).toHaveLength(1)
+    expect(stored()).toHaveLength(1)
+    expect(stored()[0].deletedAt).toBeGreaterThan(0)
+    expect(stored()[0].content).toBe('echo hi')
+    expect(JSON.parse(JSON.stringify(store.current()[0]))).toMatchObject({ id: 'a' })
+  })
+
+  it('restore：墓碑清零、条目回到片段库', () => {
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'a' }))
+    store.trash('a')
+    store.restore('a')
+
+    expect(store.trashEntries()).toHaveLength(0)
+    expect(stored()[0].deletedAt).toBeNull()
+    // 恢复后的条目置顶（updatedAt 推到当前时刻）
+    store.upsert(snippet({ id: 'b', updatedAt: Date.now() - 10_000 }))
+    store.restore('a')
+    expect(store.current()[0].id).toBe('a')
+  })
+
+  it('purge：只对回收站里的条目生效，硬删后不再回到存储', () => {
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'live' }))
+    store.purge('live') // 误传在用条目：不动
+    expect(store.current()).toHaveLength(1)
+
+    store.upsert(snippet({ id: 'gone' }))
+    store.trash('gone')
+    store.purge('gone')
+    expect(store.current().map((s) => s.id)).toEqual(['live'])
+    expect(stored().map((s) => s.id)).toEqual(['live'])
+  })
+
+  it('emptyTrash：硬删全部墓碑，在用条目不受影响', () => {
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'live' }))
+    store.upsert(snippet({ id: 't1' }))
+    store.upsert(snippet({ id: 't2' }))
+    store.trash('t1')
+    store.trash('t2')
+
+    store.emptyTrash()
+    expect(store.trashEntries()).toHaveLength(0)
+    expect(store.current().map((s) => s.id)).toEqual(['live'])
+  })
+
+  it('purgeExpired：清掉到期墓碑并返回条数，未到期的保留', () => {
+    const now = Date.now()
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'a' }))
+    store.trash('a')
+
+    // 尚未到期：不动
+    expect(store.purgeExpired(now)).toBe(0)
+    expect(store.trashEntries()).toHaveLength(1)
+
+    // 模拟 31 天后重新打开应用
+    expect(store.purgeExpired(now + 31 * DAY)).toBe(1)
+    expect(store.current()).toHaveLength(0)
+    expect(stored()).toHaveLength(0)
+    expect(store.purgeExpired(now + 31 * DAY)).toBe(0) // 幂等
+  })
+
+  it('构造时就把到期墓碑挡在外面（惰性清理，不靠定时器）', () => {
+    const now = Date.now()
+    localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { ...snippet({ id: 'fresh' }), deletedAt: now - 1 * DAY },
+        { ...snippet({ id: 'expired' }), deletedAt: now - 40 * DAY },
+      ]),
+    )
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    expect(store.current().map((s) => s.id)).toEqual(['fresh'])
+  })
+
+  it('写透钩子：trash 触发 onRemove（入队服务端软删除）；purge/emptyTrash 不触发', () => {
+    const onRemove = vi.fn()
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE, { onRemove })
+    store.upsert(snippet({ id: 'a' }))
+    store.trash('a')
+    expect(onRemove).toHaveBeenCalledTimes(1)
+    expect(onRemove).toHaveBeenCalledWith('a')
+
+    // 彻底删除是本地回收站的终点，不该再往服务端入队一次「软删除」
+    store.purge('a')
+    expect(onRemove).toHaveBeenCalledTimes(1)
+
+    store.upsert(snippet({ id: 'b' }))
+    store.trash('b')
+    expect(onRemove).toHaveBeenCalledTimes(2)
+    store.emptyTrash()
+    expect(onRemove).toHaveBeenCalledTimes(2)
+  })
+
+  it('trash 幂等：重复删除不刷新删除时间（保留期不被无限延长）', () => {
+    const store = new LocalSnippetStore(LOCAL_SNIPPET_STORAGE)
+    store.upsert(snippet({ id: 'a' }))
+    store.trash('a')
+    const first = stored()[0].deletedAt
+    store.trash('a')
+    expect(stored()[0].deletedAt).toBe(first)
+  })
+
+  it('active 已满时 restore 抛错，不挤掉在用条目、墓碑仍在', () => {
+    const storage = { key: 'vimpaste.cap.restore', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'trashed', content: 'keep-me', updatedAt: 1 }))
+    store.trash('trashed')
+    store.upsert(snippet({ id: 'keep-new', updatedAt: 3 }))
+    store.upsert(snippet({ id: 'keep-old', updatedAt: 2 }))
+
+    expect(() => store.restore('trashed')).toThrow(RestoreCapError)
+    const alive = store.current().filter((s) => s.deletedAt == null).map((s) => s.id)
+    expect(alive.sort()).toEqual(['keep-new', 'keep-old'])
+    expect(store.trashEntries().map((s) => s.id)).toEqual(['trashed'])
+    expect(store.trashEntries()[0].content).toBe('keep-me')
+  })
+
+  it('persist 后内存与磁盘一致：超出上限时 current() 也被截断', () => {
+    const storage = { key: 'vimpaste.cap.mem', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'a', updatedAt: 1 }))
+    store.upsert(snippet({ id: 'b', updatedAt: 2 }))
+    store.upsert(snippet({ id: 'c', updatedAt: 3 }))
+    expect(store.current().map((s) => s.id)).toEqual(['c', 'b'])
+    expect(JSON.parse(localStorage.getItem(storage.key) ?? '[]').map((s: { id: string }) => s.id)).toEqual([
+      'c',
+      'b',
+    ])
+  })
+
+  it('存储彻底写失败时不把内存快照换成空列表', () => {
+    const storage = { key: 'vimpaste.cap.wipe', maxEntries: 2, maxTrashEntries: 2 }
+    const store = new LocalSnippetStore(storage)
+    store.upsert(snippet({ id: 'a', content: 'keep' }))
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    try {
+      store.upsert(snippet({ id: 'b', content: 'also' }))
+      expect(store.current().some((s) => s.id === 'a' && s.content === 'keep')).toBe(true)
+    } finally {
+      setItem.mockRestore()
+    }
   })
 })

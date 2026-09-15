@@ -20,6 +20,9 @@ import { serializeSnippet, type ApiSnippet } from './serialize.js'
 
 type SnippetWithTags = Snippet & { tags: Tag[] }
 
+/** 回收站列表单页上限：回收站是「最近删的东西」，不值得翻页 */
+const TRASH_PAGE_LIMIT = 200
+
 /** cursor 编解码：base64url("<updatedAt>:<id>") */
 function encodeCursor(row: { updatedAt: Date; id: string }): string {
   return Buffer.from(`${row.updatedAt.getTime()}:${row.id}`).toString('base64url')
@@ -261,6 +264,108 @@ export function registerSnippetRoutes(app: FastifyInstance, prisma: PrismaClient
         })
       }
       return reply.send(ok({ id, deleted: true }))
+    },
+  )
+
+  /**
+   * 回收站列表：只列墓碑，按删除时间倒序（最近删的在最前）。
+   * `meta.retentionDays` 回传部署实际配置的保留天数（自托管可改
+   * TOMBSTONE_RETENTION_DAYS），客户端不硬编码 30。
+   */
+  app.get(
+    '/trash',
+    { preHandler: [app.requireAuth] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const ownerId = request.user!.id
+      const where: Prisma.SnippetWhereInput = { ownerId, deletedAt: { not: null } }
+      const [rows, total] = await Promise.all([
+        prisma.snippet.findMany({
+          where,
+          include: { tags: true },
+          orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+          take: TRASH_PAGE_LIMIT,
+        }),
+        prisma.snippet.count({ where }),
+      ])
+      return reply.send({
+        ok: true,
+        data: rows.map(serializeSnippet),
+        meta: { total, retentionDays: env.TOMBSTONE_RETENTION_DAYS },
+      })
+    },
+  )
+
+  /**
+   * 清空回收站：硬删当前用户的全部墓碑（不可恢复）。
+   *
+   * 静态段 `/trash` 与 `DELETE /:id` 同层：find-my-way 静态优先，
+   * 所以这里不会被 `/:id` 处理器当作「id 为 trash 的条目」而 404（有专门用例锁定）。
+   */
+  app.delete(
+    '/trash',
+    { preHandler: [app.requireAuth] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const ownerId = request.user!.id
+      const result = await prisma.snippet.deleteMany({
+        where: { ownerId, deletedAt: { not: null } },
+      })
+      return reply.send(ok({ count: result.count }))
+    },
+  )
+
+  /**
+   * 从回收站恢复（与软删除对称）：清墓碑并**同时推进** updatedAt / syncedAt。
+   * 两个游标缺一不可——增量拉取按 syncedAt 过滤，只看 updatedAt 的话
+   * 游标较新的设备永远拉不到这条「恢复」，条目会在那台机器上永久消失。
+   * 已不在回收站里的条目幂等返回当前状态。
+   */
+  app.post(
+    '/:id/restore',
+    { preHandler: [app.requireAuth] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const ownerId = request.user!.id
+      const id = parseUuidParam(request)
+      const existing = await prisma.snippet.findUnique({ where: { id }, include: { tags: true } })
+      if (!existing || existing.ownerId !== ownerId) {
+        throw fail(404, 'NOT_FOUND', '条目不存在')
+      }
+      if (!existing.deletedAt) {
+        return reply.send(ok(serializeSnippet(existing)))
+      }
+      // 不做配额校验：条目本来就是该用户的、且此前已占过名额，
+      // 因为「额度满了」而拒绝恢复自己的数据比短暂超额更糟
+      const now = new Date()
+      const row = await prisma.snippet.update({
+        where: { id },
+        data: { deletedAt: null, updatedAt: now, syncedAt: now },
+        include: { tags: true },
+      })
+      return reply.send(ok(serializeSnippet(row)))
+    },
+  )
+
+  /**
+   * 彻底删除单条墓碑（不可恢复）。只对回收站里的条目生效：
+   * 在用条目必须先软删——否则一次误调就把用户的条目永久抹掉。
+   */
+  app.delete(
+    '/:id/purge',
+    { preHandler: [app.requireAuth] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const ownerId = request.user!.id
+      const id = parseUuidParam(request)
+      const existing = await prisma.snippet.findUnique({
+        where: { id },
+        select: { ownerId: true, deletedAt: true },
+      })
+      if (!existing || existing.ownerId !== ownerId) {
+        throw fail(404, 'NOT_FOUND', '条目不存在')
+      }
+      if (!existing.deletedAt) {
+        throw fail(409, 'NOT_TRASHED', '条目不在回收站中，请先删除再彻底清除')
+      }
+      await prisma.snippet.delete({ where: { id } })
+      return reply.send(ok({ id, purged: true }))
     },
   )
 

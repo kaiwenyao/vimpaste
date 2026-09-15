@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { languageLabel } from '../detection/language'
 import type { Snippet, SnippetKind } from '../storage/snippets'
-import { formatRelativeTime, historyGroupLabel } from '../utils/time'
+import { formatRelativeTime, HISTORY_GROUP_EN, groupByHistoryLabel } from '../utils/time'
 import type { ApiCollection, CollectionPatch } from '../cloud/api'
 import { nextColor } from '../utils/collections'
 import { CollectionFormDialog, ColorDot } from '../components/CollectionDialogs'
@@ -32,6 +32,10 @@ export interface SavedPageProps {
   onNewPrompt: () => void
   onDeleteEntry: (id: string) => void
   onClearAll: () => void
+  /** 打开回收站（#/trash） */
+  onOpenTrash?: () => void
+  /** 回收站里的条目数（入口上的角标；0 时不显示数字） */
+  trashCount?: number
   onTogglePin: (id: string) => void
   onExport: () => void
   kindFilter: SnippetKindFilter
@@ -60,15 +64,6 @@ interface SavedGroup {
   items: Snippet[]
 }
 
-/** 分组标题的英文副标：中文标题本身是稳定的可访问文本，英文只作装饰 */
-const GROUP_EN: Record<string, string> = {
-  今天: 'Today',
-  昨天: 'Yesterday',
-  '7 天内': 'This week',
-  '30 天内': 'This month',
-  更早: 'Earlier',
-}
-
 const KIND_FILTERS: { id: SnippetKindFilter; label: string; en: string }[] = [
   { id: 'all', label: '全部', en: 'All' },
   { id: 'command', label: '命令', en: 'Commands' },
@@ -82,14 +77,7 @@ const noopCreate = async (): Promise<ApiCollection | null> => null
 const noopAsync = async (): Promise<void> => {}
 
 function groupEntries(entries: Snippet[]): SavedGroup[] {
-  const groups: SavedGroup[] = []
-  for (const entry of entries) {
-    const label = historyGroupLabel(entry.updatedAt)
-    const last = groups[groups.length - 1]
-    if (last && last.label === label) last.items.push(entry)
-    else groups.push({ label, items: [entry] })
-  }
-  return groups
+  return groupByHistoryLabel(entries, (entry) => entry.updatedAt)
 }
 
 /**
@@ -107,6 +95,8 @@ export function SavedPage(props: SavedPageProps) {
     onNewPrompt,
     onDeleteEntry,
     onClearAll,
+    onOpenTrash,
+    trashCount = 0,
     onTogglePin,
     onExport,
     cloudMode = false,
@@ -288,7 +278,7 @@ export function SavedPage(props: SavedPageProps) {
             <Fragment key={group.label}>
               <li className="history-group" aria-hidden="true">
                 <span>{group.label}</span>
-                <span className="en">{GROUP_EN[group.label]}</span>
+                <span className="en">{HISTORY_GROUP_EN[group.label]}</span>
               </li>
               {group.items.map((entry) => {
                 const collection = collections.find((c) => c.id === entry.collectionId) ?? null
@@ -382,6 +372,25 @@ export function SavedPage(props: SavedPageProps) {
 
       <footer className="history-footer">
         <span className="spacer" />
+        {onOpenTrash && (
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={onOpenTrash}
+            aria-label={trashCount > 0 ? `回收站（${trashCount} 条）` : '回收站（空）'}
+          >
+            <IconTrash size={13} />
+            <span aria-hidden="true">回收站</span>
+            {trashCount > 0 && (
+              <span className="trash-entry-count" aria-hidden="true">
+                {trashCount}
+              </span>
+            )}
+            <span className="en" aria-hidden="true">
+              Trash
+            </span>
+          </button>
+        )}
         <button type="button" className="btn ghost" onClick={onExport} aria-label="导出全部为 JSON">
           <IconDownload size={13} />
           <span aria-hidden="true">导出 JSON</span>
@@ -390,7 +399,9 @@ export function SavedPage(props: SavedPageProps) {
           type="button"
           className={`btn ghost ${clearArmed ? 'danger' : ''}`}
           onClick={handleClearAll}
-          aria-label={clearArmed ? '确认清空全部片段' : '清空全部片段'}
+          aria-label={
+            clearArmed ? '确认清空全部片段（可在回收站恢复）' : '清空全部片段（可在回收站恢复）'
+          }
           disabled={entries.length === 0}
         >
           {clearArmed ? '确认清空？' : '清空全部'}

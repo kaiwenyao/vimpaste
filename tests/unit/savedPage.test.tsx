@@ -207,10 +207,30 @@ describe('SavedPage（已保存片段库）', () => {
   it('清空全部需二次确认', async () => {
     const user = userEvent.setup()
     const props = renderSavedPage()
-    await user.click(screen.getByRole('button', { name: '清空全部片段' }))
+    await user.click(screen.getByRole('button', { name: '清空全部片段（可在回收站恢复）' }))
     expect(props.onClearAll).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: '确认清空全部片段' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部片段（可在回收站恢复）' }))
     expect(props.onClearAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('页脚有回收站入口，角标显示回收站里的条数（0 时不显示数字）', async () => {
+    const user = userEvent.setup()
+    const onOpenTrash = vi.fn()
+    renderSavedPage({ onOpenTrash, trashCount: 3 })
+
+    const button = screen.getByRole('button', { name: '回收站（3 条）' })
+    expect(within(button).getByText('3')).toBeInTheDocument()
+    await user.click(button)
+    expect(onOpenTrash).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    renderSavedPage({ onOpenTrash, trashCount: 0 })
+    expect(screen.getByRole('button', { name: '回收站（空）' })).toBeInTheDocument()
+  })
+
+  it('不传 onOpenTrash 时不渲染回收站入口（保持可选，不影响其他调用方）', () => {
+    renderSavedPage()
+    expect(screen.queryByRole('button', { name: /^回收站（/ })).not.toBeInTheDocument()
   })
 
   it('空库提示手动保存而不是自动保存', () => {
