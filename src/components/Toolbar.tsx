@@ -30,8 +30,13 @@ export interface ToolbarProps {
   savedCount?: number
   /** 手动保存三态：empty=无可保存内容；dirty=有未保存修改；saved=当前内容已入库 */
   saveState: 'empty' | 'dirty' | 'saved'
-  /** 保存去向：new=编辑器里是新片段；existing=正在续写已有片段（进保存按钮的说明） */
+  /** 保存去向：new=编辑器里是新片段；existing=正在续写已有片段（决定保存按钮的可见文案） */
   saveTarget?: 'new' | 'existing'
+  /**
+   * 保存按钮上的目标名称：existing 时是正在编辑的条目标题，new 时是新片段草稿标题（可空）。
+   * 只进 title/aria-label——按钮可见文案保持「保存修改」/「保存为新片段」这种短形态。
+   */
+  saveTargetTitle?: string | null
   onSave: () => void
   placeholderCount: number
   onPrevPlaceholder: () => void
@@ -68,6 +73,7 @@ export function Toolbar(props: ToolbarProps) {
     savedCount,
     saveState,
     saveTarget,
+    saveTargetTitle,
     onSave,
     placeholderCount,
     onPrevPlaceholder,
@@ -91,6 +97,23 @@ export function Toolbar(props: ToolbarProps) {
   // 三态：空编辑器（中性）→ 有占位符待替换（主色）→ 有内容且已全部替换（鼠尾草绿）
   const allReplaced = canCopy && placeholderCount === 0
   const phState = !canCopy ? 'idle' : allReplaced ? 'done' : 'pending'
+
+  // —— 保存按钮：可见文案直接说明「这次保存会发生什么」——
+  // 新片段 = 会在片段库里新建一条；编辑中 = 会覆盖当前这条已保存片段。
+  const editingExisting = saveTarget === 'existing'
+  const targetName = saveTargetTitle?.trim() ? `「${saveTargetTitle.trim()}」` : ''
+  const saveLabel = saveState === 'saved' ? '已保存' : editingExisting ? '保存修改' : '保存为新片段'
+  // 无障碍名称与可见文案同源（不出现「保存到片段库」这类泛称），并补上目标片段名
+  const saveAccessibleName =
+    saveState === 'saved'
+      ? '当前内容已保存到片段库'
+      : editingExisting
+        ? `保存修改到${targetName || '当前片段'}`
+        : `保存为新片段${targetName}`
+  const saveTip =
+    saveState === 'saved'
+      ? '当前内容已保存到片段库（无修改时不可点）'
+      : `${saveAccessibleName}（Ctrl/Cmd+S）`
 
   return (
     <header className="toolbar">
@@ -222,20 +245,31 @@ export function Toolbar(props: ToolbarProps) {
         <span aria-hidden="true">{clearArmed ? '确认清空？' : '清空'}</span>
       </button>
 
+      {/* 编辑器当前对应哪个片段：紧贴保存按钮，让「保存修改」有明确对象。
+          措辞与条目栏的「新片段 / 编辑中」徽标错开，同一句话不在屏幕上出现两遍。 */}
+      {saveState !== 'empty' && (
+        <span
+          className={`save-target ${editingExisting ? 'edit' : 'new'}`}
+          title={
+            editingExisting
+              ? `正在编辑已有片段${targetName}，「保存修改」会更新它`
+              : '编辑器里是新片段，「保存为新片段」会在片段库里新建一条'
+          }
+        >
+          {editingExisting ? `正在编辑${targetName || '未命名片段'}` : '新片段（未入库）'}
+        </span>
+      )}
+
       <button
         type="button"
         className={`btn save-btn ${saveState === 'saved' ? 'sage' : ''}`}
         disabled={saveState !== 'dirty'}
         onClick={onSave}
-        aria-label="保存到片段库"
-        title={
-          saveTarget === 'existing'
-            ? '保存修改到当前片段（Ctrl/Cmd+S）'
-            : '保存为新片段（Ctrl/Cmd+S）'
-        }
+        aria-label={saveAccessibleName}
+        title={saveTip}
       >
         {saveState === 'saved' ? <IconCheck size={15} /> : <IconSave size={15} />}
-        <span aria-hidden="true">{saveState === 'saved' ? '已保存' : '保存'}</span>
+        <span aria-hidden="true">{saveLabel}</span>
       </button>
 
       <button

@@ -21,6 +21,24 @@ declare global {
 }
 
 import type { Page } from '@playwright/test'
+import { expect } from '@playwright/test'
+
+/**
+ * 保存按钮的无障碍名称随去向变化：新片段 =「保存为新片段」，编辑中 =「保存修改到「<标题>」」，
+ * 已保存 = 「当前内容已保存到片段库」。用它定位「这次保存会发生什么」的那个按钮。
+ */
+export const SAVE_BTN = /^保存(为新片段|修改)/
+export const SAVED_BTN = /当前内容已保存到片段库/
+/** 保存后的 toast 也跟去向走：新片段=「已保存为新片段」，编辑中=「已保存修改到当前片段」 */
+export const SAVE_TOAST = /^已保存(为新片段|修改到当前片段)$/
+
+/** 点保存：先等它由「已保存」回到可操作，再点（避免落在禁用按钮上被静默吞掉） */
+export async function saveViaToolbar(page: Page): Promise<void> {
+  const button = page.getByRole('button', { name: SAVE_BTN })
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect(page.getByRole('status')).toHaveText(SAVE_TOAST)
+}
 
 export async function getDoc(page: Page): Promise<string> {
   return page.evaluate(() => window.__vimpaste?.getDoc() ?? '')

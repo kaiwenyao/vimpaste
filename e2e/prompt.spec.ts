@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { getDoc, saveViaToolbar, setDoc } from './helpers'
 
 /**
  * Prompt 类型端到端（plan-v2-accounts.md Phase 5 验收）：
@@ -13,14 +14,6 @@ async function openSaved(page: Page) {
   await page.getByRole('button', { name: '已保存片段' }).click()
   await expect(page.locator('.saved-page')).toBeVisible()
   return page.locator('.saved-page')
-}
-
-async function setDoc(page: Page, text: string): Promise<void> {
-  await page.evaluate((t) => window.__vimpaste?.setDoc(t), text)
-}
-
-async function getDoc(page: Page): Promise<string> {
-  return page.evaluate(() => window.__vimpaste?.getDoc() ?? '')
 }
 
 test.describe('Prompt 类型片段', () => {
@@ -54,8 +47,7 @@ test.describe('Prompt 类型片段', () => {
     await expect(varfill.getByRole('button', { name: '填充并复制' })).toBeDisabled()
 
     // 先手动保存入库，让变量记忆绑定条目 id（刷新后可还原）
-    await page.getByRole('button', { name: '保存到片段库' }).click()
-    await expect(page.getByRole('status')).toHaveText('已保存到片段库')
+    await saveViaToolbar(page)
 
     await varfill.getByRole('textbox', { name: '变量 语言 的值' }).fill('TypeScript')
     await varfill.getByRole('textbox', { name: '变量 代码 的值' }).fill('let x = 1')
@@ -79,9 +71,9 @@ test.describe('Prompt 类型片段', () => {
     expect(await getDoc(page)).toBe(PROMPT)
 
     // 恢复后仍是 prompt 形态：变量填充表单在，且记住上次填的值（仅本地）
-    await expect(page.locator('.varfill').getByRole('textbox', { name: '变量 语言 的值' })).toHaveValue(
-      'TypeScript',
-    )
+    await expect(
+      page.locator('.varfill').getByRole('textbox', { name: '变量 语言 的值' }),
+    ).toHaveValue('TypeScript')
 
     // 普通复制保持原文（模板不被改写）
     await page.evaluate((t) => navigator.clipboard.writeText(t), 'sentinel')
@@ -106,9 +98,7 @@ test.describe('Prompt 类型片段', () => {
     await page.evaluate((t) => navigator.clipboard.writeText(t), 'sentinel')
     await varfill.getByRole('button', { name: '填充并复制' }).click()
     const clipboard = await page.evaluate(() => navigator.clipboard.readText())
-    expect(clipboard).toBe(
-      '请审查下面的 Python 代码，关注边界条件：\nprint(1)\n背景：[请填写背景]',
-    )
+    expect(clipboard).toBe('请审查下面的 Python 代码，关注边界条件：\nprint(1)\n背景：[请填写背景]')
     // 原文不动
     expect(await getDoc(page)).toBe(PROMPT)
   })

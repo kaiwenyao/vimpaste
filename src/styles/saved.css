@@ -551,6 +551,14 @@
   background: var(--sage);
 }
 
+/* 状态栏里的保存目标：和「未保存/已保存」并排，回答「我改的是哪一条」 */
+.save-target-hint {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- 窄视口 ---------- */
 
 @media (max-width: 640px) {

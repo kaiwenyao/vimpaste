@@ -7,11 +7,13 @@ import { IconCheck, IconCopy, IconLock, IconPin } from './icons'
 /**
  * 条目元信息条（plan-v2-accounts.md §5/§7.4/§8）：
  * 当前编辑条目的 标题/备注、置顶、仅本地开关、标签与收藏夹编辑。
- * 开头的「编辑中」徽标向用户明示：编辑器里是已有片段，不是新片段。
+ * 开头的「编辑中」徽标 + 保存状态文案向用户明示：编辑器里是已有片段（不是新片段），
+ * 以及这份内容是否已经入库——与工具栏「保存修改」按钮一一对应。
  * 「仅本地」做在显眼位置——用户会往里存真实密钥（§10 风险 2）。
  */
 export function EntryMetaBar({
   entry,
+  dirty,
   collections,
   onTogglePin,
   onToggleLocalOnly,
@@ -21,6 +23,8 @@ export function EntryMetaBar({
   onNoteChange,
 }: {
   entry: Snippet
+  /** 编辑器内容与这条已保存片段不一致（未保存修改）时置真 */
+  dirty?: boolean
   collections: ApiCollection[]
   onTogglePin: (id: string) => void
   onToggleLocalOnly: (id: string) => void
@@ -72,6 +76,10 @@ export function EntryMetaBar({
     <div className="entry-meta" aria-label="条目属性">
       <span className="meta-badge edit" aria-hidden="true">
         编辑中
+      </span>
+      {/* 与工具栏「保存修改」同源的说明：这条片段叫什么、改动是否还在编辑器里 */}
+      <span className="meta-state" title={`正在编辑的片段：「${entry.title}」`}>
+        {dirty ? '有未保存的修改 · 点「保存修改」写回本条' : '内容已保存 · 改完点「保存修改」'}
       </span>
 
       <input
@@ -187,7 +195,7 @@ export function NewSnippetBar({
       <span className="meta-badge new" aria-hidden="true">
         新片段
       </span>
-      <span className="meta-state">尚未保存 · 保存后进入片段库</span>
+      <span className="meta-state">尚未保存 · 点「保存为新片段」进入片段库</span>
 
       <input
         type="text"

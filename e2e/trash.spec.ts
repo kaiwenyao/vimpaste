@@ -7,7 +7,7 @@
  *   3. 保留期与到期清除是可见、可解释的（「剩余 N 天」+ 打开即清理过期墓碑）。
  */
 import { expect, test, type Page } from '@playwright/test'
-import { K3S, setDoc } from './helpers'
+import { K3S, setDoc, saveViaToolbar } from './helpers'
 
 const ITEM = /^curl -sfL https/
 const HISTORY_KEY = 'vimpaste.history.v1'
@@ -23,13 +23,6 @@ async function openSaved(page: Page) {
 async function currentSavedPage(page: Page) {
   await expect(page.locator('.saved-page')).toBeVisible()
   return page.locator('.saved-page')
-}
-
-/** 等语言识别完成后手动保存（保存按钮仅在确有未保存修改时可用） */
-async function saveViaToolbar(page: Page) {
-  await expect(page.getByRole('button', { name: '保存到片段库' })).toBeEnabled()
-  await page.getByRole('button', { name: '保存到片段库' }).click()
-  await expect(page.getByRole('status')).toHaveText('已保存到片段库')
 }
 
 /** 存一条 K3S 片段，然后在片段库里把它删除（进回收站） */
