@@ -291,6 +291,24 @@ describe('SavedPage（收藏夹管理，云端模式）', () => {
     expect(props.onSelectCollection).toHaveBeenLastCalledWith(null)
   })
 
+  it('选中态高亮：选中「全部收藏夹」时它那一行也带 active（不只是文字变色）', () => {
+    // 选中态的背景与边框挂在 li.collection-item.active 上，只有按钮上的 active 会让高亮整块丢失
+    renderCloudPage({ activeCollectionId: null })
+    const allRows = screen
+      .getByRole('region', { name: '收藏夹' })
+      .querySelectorAll('.collection-item')
+    expect(allRows[0].classList.contains('active')).toBe(true)
+    expect(allRows[1].classList.contains('active')).toBe(false)
+
+    cleanup()
+    renderCloudPage({ activeCollectionId: 1 })
+    const selectedRows = screen
+      .getByRole('region', { name: '收藏夹' })
+      .querySelectorAll('.collection-item')
+    expect(selectedRows[0].classList.contains('active')).toBe(false)
+    expect(selectedRows[1].classList.contains('active')).toBe(true)
+  })
+
   it('未登录时不出现收藏夹面板', () => {
     renderSavedPage()
     expect(screen.queryByRole('region', { name: '收藏夹' })).toBeNull()

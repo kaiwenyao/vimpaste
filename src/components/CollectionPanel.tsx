@@ -72,7 +72,9 @@ export function CollectionPanel({
       </div>
 
       <ul className="collection-list">
-        <li className="collection-item">
+        {/* 选中态的高亮（边框 + 背景）挂在 li 上：这里必须和具体收藏夹行一样带上 active，
+            否则「全部收藏夹」被选中时只有文字变色 */}
+        <li className={`collection-item ${activeId === null ? 'active' : ''}`}>
           <button
             type="button"
             className={`collection-row ${activeId === null ? 'active' : ''}`}
