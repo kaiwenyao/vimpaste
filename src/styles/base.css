@@ -104,6 +104,8 @@ input:focus-visible,
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  /* 链接形态的按钮（如工具栏的 GitHub 入口）不继承下划线 */
+  text-decoration: none;
   transition:
     background 0.14s ease,
     border-color 0.14s ease,

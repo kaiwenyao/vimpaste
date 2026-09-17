@@ -8,11 +8,15 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconCopy,
+  IconGithub,
   IconHelp,
   IconSave,
   IconSettings,
   IconUser,
 } from './icons'
+
+/** 开源仓库地址：工具栏右侧的 GitHub 入口 */
+const REPO_URL = 'https://github.com/kaiwenyao/vimpaste'
 
 export interface ToolbarProps {
   langId: LangId
@@ -166,6 +170,16 @@ export function Toolbar(props: ToolbarProps) {
 
       <span className="spacer" />
 
+      <a
+        className="btn ghost icon"
+        href={REPO_URL}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label="在 GitHub 上查看源码"
+        title="在 GitHub 上查看源码（新标签打开）"
+      >
+        <IconGithub size={17} />
+      </a>
       <button
         type="button"
         className="btn ghost icon"
