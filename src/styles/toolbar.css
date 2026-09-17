@@ -187,6 +187,39 @@
   color: var(--muted);
 }
 
+/* 保存目标胶囊：紧贴保存按钮，回答「这条内容属于哪个片段」。
+   只在确有内容时出现；窄屏隐藏（那时靠编辑器上方的条目栏说明身份）。 */
+.save-target {
+  display: inline-flex;
+  align-items: center;
+  max-width: 210px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  line-height: 1.6;
+  border: 1px solid transparent;
+  /* 标题过长时截断，不把工具栏挤成两行 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-target.edit {
+  color: var(--sage-ink);
+  background: var(--sage-soft);
+  border-color: var(--sage-border);
+}
+
+.save-target.new {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.save-btn {
+  white-space: nowrap;
+}
+
 .copy-btn {
   padding: 8px 15px;
   font-size: 13.5px;
@@ -197,6 +230,11 @@
     gap: 7px;
     padding: 9px 10px;
     row-gap: 8px;
+  }
+
+  /* 窄屏优先保住按钮与占位符计数：片段身份交给编辑器上方的条目栏 */
+  .save-target {
+    display: none;
   }
 }
 

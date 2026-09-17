@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { K3S, getDoc, setDoc } from './helpers'
+import { K3S, SAVE_BTN, SAVE_TOAST, SAVED_BTN, getDoc, saveViaToolbar, setDoc } from './helpers'
 
 const ITEM = /^curl -sfL https/
 const HISTORY_KEY = 'vimpaste.history.v1'
@@ -9,13 +9,6 @@ async function openSaved(page: Page) {
   await page.getByRole('button', { name: '已保存片段' }).click()
   await expect(page.locator('.saved-page')).toBeVisible()
   return page.locator('.saved-page')
-}
-
-/** 等语言识别完成后手动保存（保存按钮仅在确有未保存修改时可用） */
-async function saveViaToolbar(page: Page) {
-  await expect(page.getByRole('button', { name: '保存到片段库' })).toBeEnabled()
-  await page.getByRole('button', { name: '保存到片段库' }).click()
-  await expect(page.getByRole('status')).toHaveText('已保存到片段库')
 }
 
 test.describe('手动保存与片段库', () => {
@@ -66,7 +59,7 @@ test.describe('手动保存与片段库', () => {
       timeout: 5000,
     })
     await page.keyboard.press('ControlOrMeta+s')
-    await expect(page.getByRole('status')).toHaveText('已保存到片段库')
+    await expect(page.getByRole('status')).toHaveText(SAVE_TOAST)
     expect(await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)).toContain('YOUR_TOKEN')
   })
 
@@ -230,7 +223,7 @@ test.describe('片段标题与备注；新片段 / 编辑中 标识', () => {
 
     // 新片段栏出现：徽标 + 说明 + 两个输入框
     await expect(page.locator('.meta-badge.new')).toBeVisible()
-    await expect(page.getByText('尚未保存 · 保存后进入片段库')).toBeVisible()
+    await expect(page.getByText('尚未保存 · 点「保存为新片段」进入片段库')).toBeVisible()
     await page.getByRole('textbox', { name: '新片段标题' }).fill('重装 k3s')
     await page.getByRole('textbox', { name: '新片段备注' }).fill('master 节点的安装脚本')
     await saveViaToolbar(page)
@@ -284,5 +277,49 @@ test.describe('片段标题与备注；新片段 / 编辑中 标识', () => {
     expect(stored).toContain('重装 k3s 脚本')
     expect(stored).toContain('MY_TOKEN')
     expect(stored).not.toContain('YOUR_TOKEN')
+  })
+  test('保存按钮随去向改文案：新片段「保存为新片段」→ 编辑中「保存修改」，并显示编辑目标', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await setDoc(page, K3S)
+
+    // 新片段：按钮明说「新建一条」，紧邻胶囊说明这些内容还没入库
+    const newButton = page.getByRole('button', { name: SAVE_BTN })
+    await expect(newButton).toBeEnabled()
+    await expect(newButton).toContainText('保存为新片段')
+    await expect(newButton).toHaveAttribute('title', /Ctrl\/Cmd\+S/)
+    await expect(page.locator('.save-target')).toHaveText('新片段（未入库）')
+
+    await saveViaToolbar(page)
+
+    // 已保存：按钮改为「已保存」并禁用，胶囊改口说明正在编辑哪一条
+    await expect(page.getByRole('button', { name: SAVED_BTN })).toBeDisabled()
+    await expect(page.locator('.save-target')).toContainText('正在编辑「curl -sfL')
+
+    // 再改动内容：按钮变「保存修改」，无障碍名称与状态栏都带上条目标题
+    await setDoc(page, K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    const editButton = page.getByRole('button', { name: /^保存修改到「curl -sfL/ })
+    await expect(editButton).toBeEnabled()
+    await expect(editButton).toContainText('保存修改')
+    await expect(page.locator('.statusbar')).toContainText('编辑「curl -sfL')
+
+    // 从片段库重新载入这条：仍然是「保存修改」的去向，而不是「保存为新片段」
+    await saveViaToolbar(page)
+    const saved = await openSaved(page)
+    await saved.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }).click()
+    await expect(page.getByRole('button', { name: SAVED_BTN })).toBeDisabled()
+    await expect(page.locator('.save-target')).toContainText('正在编辑「curl -sfL')
+  })
+
+  test('未保存标记进标签页标题，保存后恢复干净标题', async ({ page }) => {
+    await page.goto('/')
+    await expect(page).toHaveTitle(/^VimPaste/)
+
+    await setDoc(page, K3S)
+    await expect(page).toHaveTitle(/^● VimPaste/)
+
+    await saveViaToolbar(page)
+    await expect(page).toHaveTitle(/^VimPaste — /)
   })
 })

@@ -23,6 +23,32 @@ function getDoc(): string {
   return window.__vimpaste?.getDoc() ?? ''
 }
 
+/**
+ * 保存按钮的可见文案随去向变化：新片段=「保存为新片段」、编辑中=「保存修改」、已保存=「已保存」；
+ * 无障碍名称与可见文案同源，并带上目标片段名（如「保存修改到「重装 k3s」」）。
+ */
+const SAVE_BTN_NAME = /^保存(为新片段|修改)/
+const SAVED_BTN_NAME = /当前内容已保存到片段库/
+
+/** 可操作的保存按钮（新片段 / 编辑中两态）；已保存态请用 savedSaveBtn() */
+function saveBtn(): HTMLElement {
+  return screen.getByRole('button', { name: SAVE_BTN_NAME })
+}
+
+/** 已保存态的保存按钮（禁用，无障碍名称说明内容已入库） */
+function savedSaveBtn(): HTMLElement {
+  return screen.getByRole('button', { name: SAVED_BTN_NAME })
+}
+
+/**
+ * 点保存：先等它真的可点（setDoc 的内容落到 React 状态后才由「已保存」变回可操作）。
+ * 少了这一步，点击会落在禁用按钮上被静默吞掉。
+ */
+async function clickSave(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => expect(saveBtn()).toBeEnabled())
+  await user.click(saveBtn())
+}
+
 /** 点击工具栏「已保存片段」并等待片段库页面出现 */
 async function openSaved(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: '已保存片段' }))
@@ -55,7 +81,7 @@ describe('App 基础渲染与可访问性', () => {
     expect(screen.getByRole('button', { name: '已保存片段' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeDisabled()
     // 手动保存模型：编辑器为空时保存不可用
-    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeDisabled()
+    expect(saveBtn()).toBeDisabled()
     expect(screen.getByRole('button', { name: '清空编辑器' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '快捷键帮助' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '语言' })).toBeInTheDocument()
@@ -312,15 +338,15 @@ describe('手动保存（唯一的入库入口）', () => {
 
     // 状态栏提示未保存
     expect(screen.getByText('未保存')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeEnabled()
+    expect(saveBtn()).toBeEnabled()
 
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
-    expect(await screen.findByText('已保存到片段库')).toBeInTheDocument()
+    await clickSave(user)
+    expect(await screen.findByText('已保存为新片段')).toBeInTheDocument()
     expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
     // 状态栏与工具栏保存按钮都进入「已保存」（两处， getAllByText）
     expect(screen.getAllByText('已保存').length).toBeGreaterThanOrEqual(1)
-    // 已保存且无修改：按钮回到禁用态
-    expect(screen.getByRole('button', { name: '保存到片段库' })).toBeDisabled()
+    // 已保存且无修改：按钮回到禁用态，无障碍名称也说明「已入库」
+    expect(savedSaveBtn()).toBeDisabled()
   })
 
   it('复制不再写入片段库（note 提示尚未保存）', async () => {
@@ -354,9 +380,9 @@ describe('手动保存（唯一的入库入口）', () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     let list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(list).toHaveLength(1)
 
@@ -364,7 +390,7 @@ describe('手动保存（唯一的入库入口）', () => {
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     setDoc('docker run -d -p 80:80 nginx')
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(list).toHaveLength(2)
     const titles = (list as { title: string }[]).map((e) => e.title)
@@ -376,13 +402,13 @@ describe('手动保存（唯一的入库入口）', () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     // 模拟选中全部后直接粘贴新命令（不清空）：编辑器触发 paste 事件
     const cmContent = document.querySelector('.cm-content')
     expect(cmContent).not.toBeNull()
     fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
     setDoc('kubectl get nodes -o wide')
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
     expect(list).toHaveLength(2)
     expect(list.map((e) => e.title).some((t) => t.startsWith('curl -sfL'))).toBe(true)
@@ -393,7 +419,7 @@ describe('手动保存（唯一的入库入口）', () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     // 清空再粘贴相同内容后保存：仍只有一条
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
@@ -401,7 +427,7 @@ describe('手动保存（唯一的入库入口）', () => {
     await waitFor(() => {
       expect(getDoc()).toBe(K3S)
     })
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(list).toHaveLength(1)
   })
@@ -411,11 +437,11 @@ describe('手动保存（唯一的入库入口）', () => {
     render(<App />)
     // 先入库两条
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     setDoc('docker run -d -p 80:80 nginx')
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
 
     // 修改当前条目（产生未保存修改），然后从片段库打开另一条
     setDoc('docker run -d -p 80:80 nginx --restart=always')
@@ -435,7 +461,7 @@ describe('手动保存（唯一的入库入口）', () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     setDoc(K3S.replace('YOUR_TOKEN', 'CHANGED_TOKEN'))
 
     await openSaved(user)
@@ -470,10 +496,10 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
 
     setDoc(K3S)
     expect(await screen.findByText('新片段')).toBeInTheDocument()
-    expect(screen.getByText('尚未保存 · 保存后进入片段库')).toBeInTheDocument()
+    expect(screen.getByText('尚未保存 · 点「保存为新片段」进入片段库')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '新片段标题' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     expect(screen.getByText('编辑中')).toBeInTheDocument()
     expect(screen.queryByText('新片段')).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
@@ -494,7 +520,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     const noteInput = screen.getByRole('textbox', { name: '新片段备注' })
     await user.type(titleInput, '重装 k3s')
     await user.type(noteInput, 'master 节点的安装脚本')
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
 
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
       title: string
@@ -513,7 +539,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
 
     const titleInput = screen.getByRole('textbox', { name: '片段标题' })
     expect(titleInput).toHaveValue("curl -sfL https://get.k3s.io | K3S_TOKEN='YOUR_T…")
@@ -525,7 +551,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
 
     // 修改内容再保存：自定义标题保留，备注同理
     setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
     expect(list).toHaveLength(1)
     expect(list[0].title).toBe('重装 k3s 脚本')
@@ -535,7 +561,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
 
     const noteInput = screen.getByRole('textbox', { name: '片段备注' })
     await user.type(noteInput, '测试集群专用')
@@ -553,7 +579,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     // 粘贴与最近一条完全相同的内容：UI 承诺这是「新片段」
@@ -561,7 +587,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     await screen.findByRole('textbox', { name: '新片段标题' })
     await user.type(screen.getByRole('textbox', { name: '新片段标题' }), '同名内容的另一份')
     await user.type(screen.getByRole('textbox', { name: '新片段备注' }), '给新片段的备注')
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
 
     const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
       title: string
@@ -580,7 +606,7 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     const titleInput = screen.getByRole('textbox', { name: '片段标题' })
     // 先起一个自定义标题，再清空提交：应回到自动标题而不是留空
     await user.type(titleInput, '我的脚本')
@@ -603,7 +629,7 @@ describe('「已保存」片段库页面与详情页', () => {
       },
       { timeout: 3000 },
     )
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     await openSaved(user)
 
     expect(screen.getByText('1 条')).toBeInTheDocument()
@@ -633,7 +659,7 @@ describe('「已保存」片段库页面与详情页', () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     await user.click(screen.getByRole('button', { name: '清空编辑器' }))
     await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
     expect(getDoc()).toBe('')
@@ -870,7 +896,7 @@ describe('「已保存」片段库页面与详情页', () => {
       },
       { timeout: 3000 },
     )
-    await user.click(screen.getByRole('button', { name: '保存到片段库' }))
+    await clickSave(user)
     unmount()
 
     // "刷新"：编辑器从空白开始，片段库保留
@@ -897,5 +923,103 @@ describe('「已保存」片段库页面与详情页', () => {
     await waitFor(() => {
       expect(getDoc()).toBe(K3S)
     })
+  })
+})
+
+describe('保存按钮文案与「当前改的是哪一条」的可见线索', () => {
+  /** 等保存按钮变为可操作（内容落到 React 状态后才由「已保存」回到可点） */
+  async function armedSaveBtn(): Promise<HTMLElement> {
+    return await waitFor(() => {
+      const btn = saveBtn()
+      expect(btn).toBeEnabled()
+      return btn
+    })
+  }
+
+  it('新片段：可见文案是「保存为新片段」，无障碍名称同源并说明去向', async () => {
+    render(<App />)
+    setDoc(K3S)
+
+    const btn = await armedSaveBtn()
+    expect(btn).toHaveTextContent('保存为新片段')
+    // 无障碍名称与可见文案同源：不再是「保存」这类泛称
+    expect(btn).toHaveAccessibleName(/^保存为新片段/)
+    expect(btn).toHaveAttribute('title', expect.stringContaining('Ctrl/Cmd+S'))
+    // 工具栏胶囊挨着按钮说明「这些内容还没入库」
+    expect(document.querySelector('.save-target')).toHaveTextContent('新片段（未入库）')
+  })
+
+  it('编辑已有片段：按钮变成「保存修改」，名称与胶囊带上条目标题', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await clickSave(user) // 入库 → 编辑器进入「编辑中」
+    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+
+    const btn = await armedSaveBtn()
+    expect(btn).toHaveTextContent('保存修改')
+    expect(btn).toHaveAccessibleName(/^保存修改到「curl -sfL/)
+    expect(btn).toHaveAttribute('title', expect.stringContaining('Ctrl/Cmd+S'))
+    // 紧贴按钮的胶囊 + 状态栏都写明正在编辑哪一条
+    expect(document.querySelector('.save-target')?.textContent).toContain('正在编辑「curl -sfL')
+    expect(document.querySelector('.statusbar')).toHaveTextContent(/编辑「curl -sfL/)
+    expect(screen.getByText('未保存')).toBeInTheDocument()
+  })
+
+  it('已保存：按钮显示「已保存」并禁用，名称说明内容已入库', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await clickSave(user)
+
+    const btn = savedSaveBtn()
+    expect(btn).toHaveTextContent('已保存')
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAccessibleName(/当前内容已保存到片段库/)
+    // 已入库后不再喊未保存
+    expect(screen.queryByText('未保存')).not.toBeInTheDocument()
+  })
+
+  it('编辑中条目栏同步说明这份内容是否已入库', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await clickSave(user)
+    expect(await screen.findByText('内容已保存 · 改完点「保存修改」')).toBeInTheDocument()
+
+    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    expect(await screen.findByText('有未保存的修改 · 点「保存修改」写回本条')).toBeInTheDocument()
+  })
+
+  it('未保存时标签页标题带 ● 标记，保存后恢复干净标题', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    // 空编辑器：没有未保存内容，标题保持基线
+    expect(document.title).not.toContain('●')
+
+    setDoc(K3S)
+    await waitFor(() => expect(document.title.startsWith('●')).toBe(true))
+
+    await clickSave(user)
+    await waitFor(() => expect(document.title.startsWith('●')).toBe(false))
+    expect(document.title).toContain('VimPaste')
+  })
+
+  it('有未保存修改时离开页面会被拦下；保存后再离开不拦', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await armedSaveBtn()
+
+    // 未保存：beforeunload 被 preventDefault（浏览器据此弹原生确认）
+    const dirtyLeave = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyLeave)
+    expect(dirtyLeave.defaultPrevented).toBe(true)
+
+    await clickSave(user)
+    // 已保存：不再拦截，不打扰用户
+    const cleanLeave = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanLeave)
+    expect(cleanLeave.defaultPrevented).toBe(false)
   })
 })

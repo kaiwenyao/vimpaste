@@ -51,6 +51,10 @@ const CLEAR_ARM_MS = 4000
 const TOAST_MS = 2200
 /** 复制反馈（按钮变绿 + 编辑器描边 + 确认条）同进同出的停留时长 */
 const COPY_FEEDBACK_MS = 3000
+/** 标签页标题基线：与 index.html 的 <title> 一致，未保存时前面加 ● 标记 */
+const BASE_TITLE = 'VimPaste — 支持 Vim 的临时代码编辑器'
+/** 未保存标记：浏览器标签页上提示「这里还有没入库的内容」 */
+const DIRTY_MARK = '●'
 
 interface ToastState {
   text: string
@@ -332,6 +336,26 @@ export default function App() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // 未保存标记进标签页标题：切到别的标签页也能一眼看出这里还有没入库的内容
+  useEffect(() => {
+    document.title = dirty ? `${DIRTY_MARK} ${BASE_TITLE}` : BASE_TITLE
+    return () => {
+      document.title = BASE_TITLE
+    }
+  }, [dirty])
+
+  // 有未保存修改时离开页面（关闭/刷新/外链）浏览器弹原生确认；无修改时不打扰
+  useEffect(() => {
+    if (!dirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // 旧浏览器靠 returnValue 字符串判断是否弹窗，新规范只看 preventDefault
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty])
+
   // 字体大小：通过 CSS 变量即时生效
   useEffect(() => {
     document.documentElement.style.setProperty('--editor-font-size', `${fontSize}px`)
@@ -466,11 +490,12 @@ export default function App() {
     storeRef.current.upsert(entry)
   }, [resetNewMeta])
 
-  /** 「保存」按钮 / Ctrl/Cmd+S：唯一的入库入口 */
+  /** 「保存」按钮 / Ctrl+Cmd+S：唯一的入库入口（toast 文案跟着去向走：新建 vs 更新） */
   const handleSave = useCallback(() => {
     if (contentRef.current.trim() === '') return
+    const existing = activeEntryIdRef.current !== null
     commitSnapshot()
-    showToast('已保存到片段库', 'ok')
+    showToast(existing ? '已保存修改到当前片段' : '已保存为新片段', 'ok')
   }, [commitSnapshot, showToast])
 
   // Ctrl/Cmd+S 手动保存（capture 前于编辑器/浏览器默认行为，且仅在确有修改时生效）
@@ -1104,6 +1129,7 @@ export default function App() {
           savedCount={library.length}
           saveState={content.trim() === '' ? 'empty' : dirty ? 'dirty' : 'saved'}
           saveTarget={activeEntry ? 'existing' : 'new'}
+          saveTargetTitle={activeEntry ? activeEntry.title : newTitle}
           onSave={handleSave}
           placeholderCount={placeholderCount}
           onPrevPlaceholder={() => jump(-1)}
@@ -1154,6 +1180,7 @@ export default function App() {
             {activeEntry && (
               <EntryMetaBar
                 entry={activeEntry}
+                dirty={dirty}
                 collections={collections}
                 onTogglePin={handleTogglePin}
                 onToggleLocalOnly={handleToggleLocalOnly}
@@ -1232,6 +1259,8 @@ export default function App() {
           words={countWords(content)}
           tokensEstimate={estimateTokens(content.length)}
           saveState={content.trim() === '' ? undefined : dirty ? 'dirty' : 'saved'}
+          saveTarget={activeEntry ? 'existing' : 'new'}
+          saveTargetTitle={activeEntry ? activeEntry.title : newTitle}
           cloudStatus={cloudStatusView}
           onCloudRetry={handleRetrySync}
         />
