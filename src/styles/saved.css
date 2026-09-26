@@ -391,6 +391,12 @@
   border: 1px solid rgba(159, 192, 232, 0.35);
 }
 
+.tag.kind-command {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent-border);
+}
+
 .tag.pinned {
   color: var(--accent-ink);
   display: inline-flex;

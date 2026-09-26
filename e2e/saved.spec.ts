@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
-import { K3S, SAVE_BTN, SAVE_TOAST, SAVED_BTN, getDoc, saveViaToolbar, setDoc } from './helpers'
+import {
+  K3S,
+  SAVE_BTN,
+  SAVE_TOAST,
+  SAVED_BTN,
+  confirmCurrentKind,
+  getDoc,
+  saveViaToolbar,
+  setDoc,
+} from './helpers'
 
 const ITEM = /^curl -sfL https/
 const HISTORY_KEY = 'vimpaste.history.v1'
@@ -59,6 +68,7 @@ test.describe('手动保存与片段库', () => {
       timeout: 5000,
     })
     await page.keyboard.press('ControlOrMeta+s')
+    await confirmCurrentKind(page)
     await expect(page.getByRole('status')).toHaveText(SAVE_TOAST)
     expect(await page.evaluate((k) => localStorage.getItem(k), HISTORY_KEY)).toContain('YOUR_TOKEN')
   })
@@ -77,7 +87,7 @@ test.describe('手动保存与片段库', () => {
     const detail = page.locator('.detail-page')
     await expect(detail).toBeVisible()
     await expect(detail.locator('.detail-title')).toContainText('curl -sfL https://get.k3s.io')
-    await expect(detail.getByText('命令')).toBeVisible()
+    await expect(detail.getByRole('combobox', { name: '片段类型' })).toHaveValue('command')
     // 按字段名定位信息行，避免与其他数字误匹配
     const rowFor = (label: string) => detail.locator('.detail-row', { hasText: label })
     await expect(rowFor('语言').locator('dd')).toHaveText('Shell / Bash')

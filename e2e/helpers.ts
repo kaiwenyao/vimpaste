@@ -32,12 +32,21 @@ export const SAVED_BTN = /当前内容已保存到片段库/
 /** 保存后的 toast 也跟去向走：新片段=「已保存为新片段」，编辑中=「已保存修改到当前片段」 */
 export const SAVE_TOAST = /^已保存(为新片段|修改到当前片段)$/
 
-/** 点保存：先等它由「已保存」回到可操作，再点（避免落在禁用按钮上被静默吞掉） */
+/** 点保存：先等它由「已保存」回到可操作，再点（避免落在禁用按钮上被静默吞掉）。
+ *  新片段会先弹出类型选择，点当前编辑器形态对应的那一项后才真正入库。 */
 export async function saveViaToolbar(page: Page): Promise<void> {
   const button = page.getByRole('button', { name: SAVE_BTN })
   await expect(button).toBeEnabled()
+  const isNew = (await button.innerText()).includes('保存为新片段')
   await button.click()
+  if (isNew) await confirmCurrentKind(page)
   await expect(page.getByRole('status')).toHaveText(SAVE_TOAST)
+}
+
+/** 新片段保存对话框：点与当前编辑器形态一致的那一项 */
+export async function confirmCurrentKind(page: Page): Promise<void> {
+  const kindDialog = page.getByRole('dialog', { name: '保存为哪种片段？' })
+  await kindDialog.getByRole('button', { pressed: true }).click()
 }
 
 export async function getDoc(page: Page): Promise<string> {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Snippet } from '../storage/snippets'
+import type { Snippet, SnippetKind } from '../storage/snippets'
 import { SNIPPET_NOTE_MAX_CHARS, SNIPPET_TITLE_MAX_CHARS } from '../storage/snippets'
 import type { ApiCollection } from '../cloud/api'
 import { IconCheck, IconCopy, IconLock, IconPin } from './icons'
@@ -21,6 +21,7 @@ export function EntryMetaBar({
   onCollectionChange,
   onTitleChange,
   onNoteChange,
+  onKindChange,
 }: {
   entry: Snippet
   /** 编辑器内容与这条已保存片段不一致（未保存修改）时置真 */
@@ -32,6 +33,7 @@ export function EntryMetaBar({
   onCollectionChange: (id: string, collectionId: number | null) => void
   onTitleChange: (id: string, title: string) => void
   onNoteChange: (id: string, note: string) => void
+  onKindChange: (id: string, kind: SnippetKind) => void
 }) {
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
   const tagsValue = tagsDraft ?? (entry.tags ?? []).join(', ')
@@ -81,6 +83,16 @@ export function EntryMetaBar({
       <span className="meta-state" title={`正在编辑的片段：「${entry.title}」`}>
         {dirty ? '有未保存的修改 · 点「保存修改」写回本条' : '内容已保存 · 改完点「保存修改」'}
       </span>
+
+      <select
+        className="select small"
+        aria-label="片段类型"
+        value={(entry.kind ?? 'command') === 'prompt' ? 'prompt' : 'command'}
+        onChange={(e) => onKindChange(entry.id, e.target.value === 'prompt' ? 'prompt' : 'command')}
+      >
+        <option value="command">命令</option>
+        <option value="prompt">Prompt</option>
+      </select>
 
       <input
         type="text"

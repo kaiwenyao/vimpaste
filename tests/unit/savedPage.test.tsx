@@ -106,6 +106,17 @@ describe('SavedPage（已保存片段库）', () => {
     expect(props.onDeleteEntry).toHaveBeenCalledWith('e1')
   })
 
+  it('列表同时标出命令和 Prompt', () => {
+    renderSavedPage({
+      entries: [
+        snippet({ id: 'c', title: '一条命令', kind: 'command' }),
+        snippet({ id: 'p', title: '一条提示', kind: 'prompt', langId: 'plaintext' }),
+      ],
+    })
+    expect(screen.getByLabelText('类型：命令')).toHaveTextContent('命令')
+    expect(screen.getByLabelText('类型：Prompt')).toHaveTextContent('Prompt')
+  })
+
   it('新建粘贴 / 新建 Prompt / 导出 / 返回编辑器各自触发回调', async () => {
     const user = userEvent.setup()
     const props = renderSavedPage()
@@ -526,6 +537,7 @@ describe('SnippetDetailPage（条目详情）', () => {
       onCopy: vi.fn(),
       onTogglePin: vi.fn(),
       onDelete: vi.fn(),
+      onKindChange: vi.fn(),
       ...overrides,
     }
     const view = render(<SnippetDetailPage {...props} />)
@@ -535,7 +547,7 @@ describe('SnippetDetailPage（条目详情）', () => {
   it('展示完整元信息：类型 / 语言 / 字符数 / 行数 / 字数 / 同步状态', () => {
     const { view } = renderDetail()
     expect(view.container.querySelector('dl')).not.toBeNull()
-    expect(screen.getByText('命令')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '片段类型' })).toHaveValue('command')
     expect(screen.getByText('Shell / Bash')).toBeInTheDocument()
     expect(screen.getByText(String(CONTENT.length), { selector: 'dd' })).toBeInTheDocument()
     expect(
@@ -592,6 +604,16 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(props.onDelete).toHaveBeenCalledWith('e1')
   })
 
+  it('类型下拉改成 Prompt 或命令时回调携带条目 id', async () => {
+    const user = userEvent.setup()
+    const onKindChange = vi.fn()
+    const { props } = renderDetail({ onKindChange })
+    await user.selectOptions(screen.getByRole('combobox', { name: '片段类型' }), 'prompt')
+    expect(onKindChange).toHaveBeenCalledWith(props.entry.id, 'prompt')
+    await user.selectOptions(screen.getByRole('combobox', { name: '片段类型' }), 'command')
+    expect(onKindChange).toHaveBeenLastCalledWith(props.entry.id, 'command')
+  })
+
   it('Prompt 类型显示 Prompt 标签与 token 估算', () => {
     renderDetail({
       entry: snippet({
@@ -601,7 +623,7 @@ describe('SnippetDetailPage（条目详情）', () => {
         tags: [],
       }),
     })
-    expect(screen.getByText('Prompt')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '片段类型' })).toHaveValue('prompt')
     expect(screen.getByText(/预估 tokens/)).toBeInTheDocument()
   })
 

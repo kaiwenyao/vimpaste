@@ -68,6 +68,11 @@ interface CopyFeedback {
   note: string
 }
 
+/** 新片段保存前的类型选择：after 是选完并入库之后要继续的导航（「保存并继续」） */
+interface KindSaveRequest {
+  after: (() => void) | null
+}
+
 declare global {
   interface Window {
     /** 仅供自动化测试使用的最小句柄；不涉及任何持久化 */
@@ -155,6 +160,8 @@ export default function App() {
   const [varValues, setVarValues] = useState<Record<string, string>>({})
   /** 有未保存修改时的继续动作：确认对话框背后的那一步（打开条目 / 新建…） */
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
+  /** 新片段入库前等待用户选择命令或 Prompt；null = 对话框关闭 */
+  const [pendingKindSave, setPendingKindSave] = useState<KindSaveRequest | null>(null)
 
   const toastTimer = useRef(0)
   const clearTimer = useRef(0)
@@ -174,6 +181,7 @@ export default function App() {
   const collectionsRef = useRef<ApiCollection[]>([])
   /** 从片段库跳回编辑器时是否自动聚焦（仅导航触发，刷新不聚焦） */
   const pendingFocusRef = useRef(false)
+  const pendingKindSaveRef = useRef<KindSaveRequest | null>(null)
 
   useEffect(() => {
     libraryRef.current = library
@@ -425,78 +433,151 @@ export default function App() {
   }, [])
 
   /** 手动保存：把当前编辑器内容写入/更新片段条目（新建或续写当前条目；与最近一条相同则复用）。
-   *  新片段栏里的标题/备注与目标收藏夹随保存一起入库；已有条目的自定义标题不被自动标题覆盖。 */
-  const commitSnapshot = useCallback(() => {
-    const text = contentRef.current
-    if (text.trim() === '') return
-    const now = Date.now()
-    const current = libraryRef.current
-    const prevId = activeEntryIdRef.current
-    const kind = editorKindRef.current
-    const langForKind: LangId =
-      kind === 'prompt'
-        ? langIdRef.current === 'markdown'
-          ? 'markdown'
-          : 'plaintext'
-        : langIdRef.current
-    const draftTitle = newTitleRef.current.trim().slice(0, SNIPPET_TITLE_MAX_CHARS)
-    const draftNote = newNoteRef.current.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
-    // 目标收藏夹：'auto' = 用户没碰过选择器，落 default 收藏夹（不存在则不入夹）
-    const draftCollectionId =
-      newCollectionRef.current === 'auto'
-        ? defaultCollectionId(collectionsRef.current)
-        : newCollectionRef.current
-    // 「新片段」栏里填了标题/备注 = 用户在给一条新片段起名：此时即使内容与最近一条
-    // 已保存条目完全相同，也不走「复用最近一条」的去重回退——否则草稿元信息会覆盖
-    // 旧条目的标题/备注，与 UI 承诺的新片段相悖（草稿为空时去重行为不变）。
-    const hasDraftMeta = draftTitle !== '' || draftNote !== ''
-    const target =
-      (prevId ? current.find((e) => e.id === prevId) : undefined) ??
-      (!hasDraftMeta && current[0] && current[0].content === text ? current[0] : undefined)
-    // 自定义标题的不变量：从未改过标题的条目恒有 title === deriveTitle(content)。
-    // 据此保存内容时保留用户起的名字，只让自动标题跟随新内容；新片段栏的草稿标题优先。
-    const title =
-      draftTitle !== ''
-        ? draftTitle
-        : target && target.title !== deriveTitle(target.content)
-          ? target.title
-          : deriveTitle(text)
-    const note = draftNote !== '' ? draftNote : target?.note
-    const entry: Snippet = target
-      ? {
-          ...target,
-          content: text,
-          langId: (target.kind ?? 'command') === 'prompt' ? langForKind : langIdRef.current,
-          title,
-          ...(note !== undefined ? { note } : {}),
-          updatedAt: now,
-          syncState: sessionRef.current ? 'pending' : 'local',
-        }
-      : {
-          id: createHistoryId(),
-          title,
-          content: text,
-          ...(note !== undefined ? { note } : {}),
-          langId: langForKind,
-          collectionId: draftCollectionId,
-          createdAt: now,
-          updatedAt: now,
-          kind,
-          syncState: sessionRef.current ? 'pending' : 'local',
-        }
-    activeEntryIdRef.current = entry.id
-    setActiveEntryId(entry.id)
-    resetNewMeta()
-    storeRef.current.upsert(entry)
-  }, [resetNewMeta])
+   *  新片段栏里的标题/备注与目标收藏夹随保存一起入库；已有条目的自定义标题不被自动标题覆盖。
+   *  kindOverride 只用于新片段：类型对话框选中后立刻传入，不能等 editorKindRef 的 effect。 */
+  const commitSnapshot = useCallback(
+    (kindOverride?: SnippetKind) => {
+      const text = contentRef.current
+      if (text.trim() === '') return
+      const now = Date.now()
+      const current = libraryRef.current
+      const prevId = activeEntryIdRef.current
+      const kind = kindOverride ?? editorKindRef.current
+      const langForKind: LangId =
+        kind === 'prompt'
+          ? langIdRef.current === 'markdown'
+            ? 'markdown'
+            : 'plaintext'
+          : langIdRef.current
+      const draftTitle = newTitleRef.current.trim().slice(0, SNIPPET_TITLE_MAX_CHARS)
+      const draftNote = newNoteRef.current.trim().slice(0, SNIPPET_NOTE_MAX_CHARS)
+      // 目标收藏夹：'auto' = 用户没碰过选择器，落 default 收藏夹（不存在则不入夹）
+      const draftCollectionId =
+        newCollectionRef.current === 'auto'
+          ? defaultCollectionId(collectionsRef.current)
+          : newCollectionRef.current
+      // 「新片段」栏里填了标题/备注 = 用户在给一条新片段起名：此时即使内容与最近一条
+      // 已保存条目完全相同，也不走「复用最近一条」的去重回退——否则草稿元信息会覆盖
+      // 旧条目的标题/备注，与 UI 承诺的新片段相悖（草稿为空时去重行为不变）。
+      const hasDraftMeta = draftTitle !== '' || draftNote !== ''
+      const target =
+        (prevId ? current.find((e) => e.id === prevId) : undefined) ??
+        (!hasDraftMeta && current[0] && current[0].content === text ? current[0] : undefined)
+      // 自定义标题的不变量：从未改过标题的条目恒有 title === deriveTitle(content)。
+      // 据此保存内容时保留用户起的名字，只让自动标题跟随新内容；新片段栏的草稿标题优先。
+      const title =
+        draftTitle !== ''
+          ? draftTitle
+          : target && target.title !== deriveTitle(target.content)
+            ? target.title
+            : deriveTitle(text)
+      const note = draftNote !== '' ? draftNote : target?.note
+      const entry: Snippet = target
+        ? {
+            ...target,
+            content: text,
+            langId: (target.kind ?? 'command') === 'prompt' ? langForKind : langIdRef.current,
+            title,
+            ...(note !== undefined ? { note } : {}),
+            updatedAt: now,
+            syncState: sessionRef.current ? 'pending' : 'local',
+          }
+        : {
+            id: createHistoryId(),
+            title,
+            content: text,
+            ...(note !== undefined ? { note } : {}),
+            langId: langForKind,
+            collectionId: draftCollectionId,
+            createdAt: now,
+            updatedAt: now,
+            kind,
+            syncState: sessionRef.current ? 'pending' : 'local',
+          }
+      activeEntryIdRef.current = entry.id
+      setActiveEntryId(entry.id)
+      resetNewMeta()
+      storeRef.current.upsert(entry)
+    },
+    [resetNewMeta],
+  )
 
-  /** 「保存」按钮 / Ctrl+Cmd+S：唯一的入库入口（toast 文案跟着去向走：新建 vs 更新） */
+  /** 打开「保存为哪种片段？」；已打开时不重复弹 */
+  const openKindDialog = useCallback((after: (() => void) | null) => {
+    if (pendingKindSaveRef.current) return
+    const request: KindSaveRequest = { after }
+    pendingKindSaveRef.current = request
+    setPendingKindSave(request)
+  }, [])
+
+  const closeKindDialog = useCallback(() => {
+    pendingKindSaveRef.current = null
+    setPendingKindSave(null)
+  }, [])
+
+  /**
+   * 新片段选完类型后入库，并把编辑器切到对应形态。
+   * 从 Prompt 改存为命令时，语言识别在入库之后补写 langId（先入库，避免等待期间再按一次保存变成第二条）。
+   */
+  const confirmKindSave = useCallback(
+    (kind: SnippetKind) => {
+      const request = pendingKindSaveRef.current
+      if (!request) return
+      pendingKindSaveRef.current = null
+      setPendingKindSave(null)
+
+      const previous = editorKindRef.current
+      if (kind === 'prompt') {
+        const nextLang: LangId = langIdRef.current === 'markdown' ? 'markdown' : 'plaintext'
+        langIdRef.current = nextLang
+        setLangId(nextLang)
+        setManualOverride(true)
+      }
+      editorKindRef.current = kind
+      setEditorKind(kind)
+
+      if (contentRef.current.trim() === '') {
+        request.after?.()
+        return
+      }
+      commitSnapshot(kind)
+      showToast('已保存为新片段', 'ok')
+
+      if (kind === 'command' && previous !== 'command') {
+        setManualOverride(false)
+        const savedId = activeEntryIdRef.current
+        void detectLanguage(contentRef.current).then((detected) => {
+          const latest = savedId ? libraryRef.current.find((e) => e.id === savedId) : undefined
+          if (!latest || (latest.kind ?? 'command') !== 'command') return
+          if (activeEntryIdRef.current === savedId) {
+            langIdRef.current = detected
+            setLangId(detected)
+          }
+          if (latest.langId === detected) return
+          storeRef.current.upsert({
+            ...latest,
+            langId: detected,
+            syncState: sessionRef.current ? 'pending' : 'local',
+            updatedAt: Date.now(),
+          })
+        })
+      }
+      request.after?.()
+    },
+    [commitSnapshot, showToast],
+  )
+
+  /** 「保存」按钮 / Ctrl+Cmd+S：唯一的入库入口。新片段先选类型；已有片段直接更新且不改类型。 */
   const handleSave = useCallback(() => {
     if (contentRef.current.trim() === '') return
-    const existing = activeEntryIdRef.current !== null
+    if (pendingKindSaveRef.current) return
+    if (activeEntryIdRef.current === null) {
+      openKindDialog(null)
+      return
+    }
     commitSnapshot()
-    showToast(existing ? '已保存修改到当前片段' : '已保存为新片段', 'ok')
-  }, [commitSnapshot, showToast])
+    showToast('已保存修改到当前片段', 'ok')
+  }, [commitSnapshot, openKindDialog, showToast])
 
   // Ctrl/Cmd+S 手动保存（capture 前于编辑器/浏览器默认行为，且仅在确有修改时生效）
   useEffect(() => {
@@ -716,9 +797,19 @@ export default function App() {
     const run = pendingNav
     setPendingNav(null)
     if (!run) return
-    handleSave()
+    if (contentRef.current.trim() === '') {
+      run()
+      return
+    }
+    // 新片段要先选类型，选完再离开；取消对话框则留在原地
+    if (activeEntryIdRef.current === null) {
+      openKindDialog(run)
+      return
+    }
+    commitSnapshot()
+    showToast('已保存修改到当前片段', 'ok')
     run()
-  }, [pendingNav, handleSave])
+  }, [pendingNav, commitSnapshot, openKindDialog, showToast])
   const confirmDiscard = useCallback(() => {
     const run = pendingNav
     setPendingNav(null)
@@ -823,6 +914,50 @@ export default function App() {
       collectionId,
       syncState: sessionRef.current ? 'pending' : 'local',
       updatedAt: Date.now(),
+    })
+  }, [])
+
+  /** 改已保存片段的类型（详情页 / 编辑条目栏）。正在编辑的那条同时切换编辑器形态。 */
+  const handleKindChange = useCallback((id: string, kind: SnippetKind) => {
+    const entry = libraryRef.current.find((e) => e.id === id)
+    if (!entry || (entry.kind ?? 'command') === kind) return
+    const now = Date.now()
+    const syncState = sessionRef.current ? 'pending' : ('local' as const)
+    const editing = activeEntryIdRef.current === id
+
+    if (kind === 'prompt') {
+      const langId: LangId = entry.langId === 'markdown' ? 'markdown' : 'plaintext'
+      storeRef.current.upsert({ ...entry, kind, langId, syncState, updatedAt: now })
+      if (editing) {
+        editorKindRef.current = 'prompt'
+        setEditorKind('prompt')
+        langIdRef.current = langId
+        setLangId(langId)
+        setManualOverride(true)
+      }
+      return
+    }
+
+    storeRef.current.upsert({ ...entry, kind: 'command', syncState, updatedAt: now })
+    if (editing) {
+      editorKindRef.current = 'command'
+      setEditorKind('command')
+      setManualOverride(false)
+    }
+    void detectLanguage(entry.content).then((detected) => {
+      const latest = libraryRef.current.find((e) => e.id === id)
+      if (!latest || (latest.kind ?? 'command') !== 'command') return
+      if (activeEntryIdRef.current === id) {
+        langIdRef.current = detected
+        setLangId(detected)
+      }
+      if (latest.langId === detected) return
+      storeRef.current.upsert({
+        ...latest,
+        langId: detected,
+        syncState: sessionRef.current ? 'pending' : 'local',
+        updatedAt: Date.now(),
+      })
     })
   }, [])
 
@@ -1188,6 +1323,7 @@ export default function App() {
                 onCollectionChange={handleCollectionChange}
                 onTitleChange={handleTitleChange}
                 onNoteChange={handleNoteChange}
+                onKindChange={handleKindChange}
               />
             )}
 
@@ -1294,6 +1430,7 @@ export default function App() {
             onDelete={handleDeleteFromDetail}
             onMoveEntry={cloudUser !== null ? handleCollectionChange : undefined}
             onCreateCollection={cloudUser !== null ? handleCreateCollection : undefined}
+            onKindChange={handleKindChange}
           />
         ) : (
           <div className="page detail-page">
@@ -1332,6 +1469,30 @@ export default function App() {
         onClose={() => setHelpOpen(false)}
         cloudMode={cloudUser !== null}
       />
+
+      <Dialog open={pendingKindSave !== null} onClose={closeKindDialog} title="保存为哪种片段？">
+        <p className="confirm-text">这条还没进片段库。先选类型再保存，之后还可以改。</p>
+        <div className="kind-choices">
+          <button
+            type="button"
+            className={`kind-choice ${editorKind === 'command' ? 'current' : ''}`}
+            aria-pressed={editorKind === 'command'}
+            onClick={() => confirmKindSave('command')}
+          >
+            <span className="kind-choice-label">命令</span>
+            <span className="kind-choice-desc">语法高亮、语言识别、命令占位符</span>
+          </button>
+          <button
+            type="button"
+            className={`kind-choice ${editorKind === 'prompt' ? 'current' : ''}`}
+            aria-pressed={editorKind === 'prompt'}
+            onClick={() => confirmKindSave('prompt')}
+          >
+            <span className="kind-choice-label">Prompt</span>
+            <span className="kind-choice-desc">软换行、{'{{变量}}'}、不做语言识别</span>
+          </button>
+        </div>
+      </Dialog>
 
       <Dialog open={pendingNav !== null} onClose={closePendingNav} title="有未保存的修改">
         <p className="confirm-text">编辑器里的内容还没有保存到片段库，继续操作将丢弃这些修改。</p>

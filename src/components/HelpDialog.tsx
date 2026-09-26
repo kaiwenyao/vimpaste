@@ -53,7 +53,7 @@ export function HelpDialog({
         <Row keys="Ctrl/Cmd+Enter" desc="复制全部内容（编辑器聚焦时）" />
         <Row
           keys="Ctrl/Cmd+S"
-          desc="保存（新片段为「保存为新片段」，编辑中为「保存修改」；唯一的保存入口，不会自动保存）"
+          desc="保存（新片段先选择命令或 Prompt，编辑中为「保存修改」；唯一的保存入口，不会自动保存）"
         />
         <Row keys="Esc" desc="关闭本面板" />
       </Section>
