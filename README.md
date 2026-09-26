@@ -53,7 +53,7 @@ TEST_DATABASE_URL=postgresql://vimpaste:vimpaste@localhost:5432/vimpaste_test np
 
 ## 构建与部署
 
-`npm run build` 产出 `dist/`（`base` 为 `/vimpaste/` 仓库子路径）。推送到 `main` 后 GitHub Actions 自动执行质量检查并部署到 GitHub Pages（`.github/workflows/deploy.yml`），部署目标为 Pages 的「GitHub Actions」来源。也可以手动 `npm run build && npm run preview` 在本地验证生产构建。
+`npm run build` 产出 `dist/`（`base` 为 `/vimpaste/` 仓库子路径）。本地用 `npm run build && npm run preview` 验证生产构建。
 
 ## 两种形态：匿名本地版与自托管登录版
 
