@@ -117,10 +117,10 @@ describe('SavedPage（已保存片段库）', () => {
     expect(screen.getByLabelText('类型：Prompt')).toHaveTextContent('Prompt')
   })
 
-  it('新建粘贴 / 新建 Prompt / 导出 / 返回编辑器各自触发回调', async () => {
+  it('新建命令 / 新建 Prompt / 导出 / 返回编辑器各自触发回调', async () => {
     const user = userEvent.setup()
     const props = renderSavedPage()
-    await user.click(screen.getByRole('button', { name: '新建粘贴' }))
+    await user.click(screen.getByRole('button', { name: '新建命令' }))
     expect(props.onNewPaste).toHaveBeenCalledTimes(1)
     await user.click(screen.getByRole('button', { name: '新建 Prompt' }))
     expect(props.onNewPrompt).toHaveBeenCalledTimes(1)

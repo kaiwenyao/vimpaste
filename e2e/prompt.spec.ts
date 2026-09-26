@@ -112,9 +112,9 @@ test.describe('Prompt 类型片段', () => {
     const langSelect = page.getByRole('combobox', { name: '语言' })
     await expect(langSelect.locator('option')).toHaveCount(2)
 
-    // 回到片段库再「新建粘贴」，编辑器切回命令形态
+    // 回到片段库再「新建命令」，编辑器切回命令形态
     const reopened = await openSaved(page)
-    await reopened.getByRole('button', { name: '新建粘贴' }).click()
+    await reopened.getByRole('button', { name: '新建命令' }).click()
     await expect(page.locator('.cm-content')).toBeVisible()
     await expect(langSelect.locator('option')).toHaveCount(12)
     // 命令形态：识别生效
