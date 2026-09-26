@@ -306,9 +306,13 @@ export function SavedPage(props: SavedPageProps) {
                             <span className="collection-tag-name">{collection.name}</span>
                           </span>
                         )}
-                        {(entry.kind ?? 'command') === 'prompt' && (
+                        {(entry.kind ?? 'command') === 'prompt' ? (
                           <span className="tag kind-prompt" aria-label="类型：Prompt">
                             Prompt
+                          </span>
+                        ) : (
+                          <span className="tag kind-command" aria-label="类型：命令">
+                            命令
                           </span>
                         )}
                         {entry.pinned === true && (

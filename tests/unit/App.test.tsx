@@ -46,7 +46,11 @@ function savedSaveBtn(): HTMLElement {
  */
 async function clickSave(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => expect(saveBtn()).toBeEnabled())
+  const isNew = saveBtn().textContent?.includes('保存为新片段') ?? false
   await user.click(saveBtn())
+  if (!isNew) return
+  const dialog = await screen.findByRole('dialog', { name: '保存为哪种片段？' })
+  await user.click(within(dialog).getByRole('button', { pressed: true }))
 }
 
 /** 点击工具栏「已保存片段」并等待片段库页面出现 */
@@ -362,18 +366,69 @@ describe('手动保存（唯一的入库入口）', () => {
     expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
   })
 
-  it('Ctrl/Cmd+S 保存；无修改时按键不重复写入', () => {
+  it('Ctrl/Cmd+S 保存；无修改时按键不重复写入', async () => {
+    const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    const dialog = await screen.findByRole('dialog', { name: '保存为哪种片段？' })
+    await user.click(within(dialog).getByRole('button', { pressed: true }))
     expect(localStorage.getItem(HISTORY_KEY)).toContain('YOUR_TOKEN')
 
     const first = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(first).toHaveLength(1)
     // 无修改再按：不产生新条目、不刷新 updatedAt 相关副作用导致条目翻倍
     fireEvent.keyDown(window, { key: 's', metaKey: true })
+    expect(screen.queryByRole('dialog', { name: '保存为哪种片段？' })).not.toBeInTheDocument()
     const again = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown[]
     expect(again).toHaveLength(1)
+  })
+
+  it('新片段保存时必须选择类型：关闭不入库，选 Prompt 则按 Prompt 保存', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc('请用 {{语言}} 写一段说明')
+    await waitFor(() => expect(saveBtn()).toBeEnabled())
+    await user.click(saveBtn())
+    const dialog = await screen.findByRole('dialog', { name: '保存为哪种片段？' })
+    expect(within(dialog).getByRole('button', { name: /^命令/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await user.click(within(dialog).getByRole('button', { name: '关闭' }))
+    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
+    expect(screen.queryByRole('dialog', { name: '保存为哪种片段？' })).not.toBeInTheDocument()
+
+    await user.click(saveBtn())
+    const again = await screen.findByRole('dialog', { name: '保存为哪种片段？' })
+    await user.click(within(again).getByRole('button', { name: /^Prompt/ }))
+    expect(await screen.findByText('已保存为新片段')).toBeInTheDocument()
+    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { kind: string }[]
+    expect(saved[0]?.kind).toBe('prompt')
+    expect(screen.getByText(/tokens（估算）/)).toBeInTheDocument()
+  })
+
+  it('已保存片段可从条目栏改类型；再保存修改时不再询问', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    setDoc(K3S)
+    await clickSave(user)
+    const stored = () => JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { kind: string }[]
+    expect(stored()[0]?.kind).toBe('command')
+
+    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    await waitFor(() => expect(saveBtn()).toBeEnabled())
+    expect(saveBtn()).toHaveTextContent('保存修改')
+    await user.click(saveBtn())
+    expect(screen.queryByRole('dialog', { name: '保存为哪种片段？' })).not.toBeInTheDocument()
+    expect(await screen.findByText('已保存修改到当前片段')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '片段类型' }), 'prompt')
+    await waitFor(() => expect(stored()[0]?.kind).toBe('prompt'))
+    expect(screen.getByText(/tokens（估算）/)).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '片段类型' }), 'command')
+    await waitFor(() => expect(stored()[0]?.kind).toBe('command'))
   })
 
   it('持续保存更新当前条目；清空后保存另一段内容产生新条目', async () => {
@@ -638,7 +693,7 @@ describe('「已保存」片段库页面与详情页', () => {
     // 点击行 → 详情页
     await user.click(screen.getByRole('button', { name: /^curl -sfL/ }))
     expect(await screen.findByRole('button', { name: '返回片段列表' })).toBeInTheDocument()
-    expect(screen.getByText('命令')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '片段类型' })).toHaveValue('command')
     // 隐藏的编辑器状态栏也渲染了语言名，用选择器限定详情页网格
     expect(screen.getByText('Shell / Bash', { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getByText(String(K3S.length), { selector: 'dd' })).toBeInTheDocument()

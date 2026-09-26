@@ -47,6 +47,7 @@ export interface SnippetDetailPageProps {
   onMoveEntry?: (entryId: string, collectionId: number | null) => void
   /** 云端模式：详情页就地新建收藏夹（创建成功即把该条目移进去） */
   onCreateCollection?: (name: string, color: string) => Promise<ApiCollection | null>
+  onKindChange: (id: string, kind: 'command' | 'prompt') => void
 }
 
 /**
@@ -63,6 +64,7 @@ export function SnippetDetailPage({
   onDelete,
   onMoveEntry,
   onCreateCollection,
+  onKindChange,
 }: SnippetDetailPageProps) {
   const [clearArmed, setClearArmed] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -157,7 +159,17 @@ export function SnippetDetailPage({
       <div className="detail-meta">
         <dl className="detail-grid">
           <InfoRow label="类型">
-            <span className="tag neutral">{isPrompt ? 'Prompt' : '命令'}</span>
+            <select
+              className="select small"
+              aria-label="片段类型"
+              value={isPrompt ? 'prompt' : 'command'}
+              onChange={(e) =>
+                onKindChange(entry.id, e.target.value === 'prompt' ? 'prompt' : 'command')
+              }
+            >
+              <option value="command">命令</option>
+              <option value="prompt">Prompt</option>
+            </select>
           </InfoRow>
           <InfoRow label="语言">{languageLabel(entry.langId)}</InfoRow>
           <InfoRow label="字符数">{entry.content.length}</InfoRow>
