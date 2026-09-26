@@ -178,13 +178,13 @@ export function SavedPage(props: SavedPageProps) {
         <button
           type="button"
           className="btn history-new"
-          aria-label="新建粘贴"
+          aria-label="新建命令"
           onClick={onNewPaste}
         >
           <IconPlus size={14} />
-          <span aria-hidden="true">新建粘贴</span>
+          <span aria-hidden="true">新建命令</span>
           <span className="en" aria-hidden="true">
-            New paste
+            New command
           </span>
         </button>
         <button
