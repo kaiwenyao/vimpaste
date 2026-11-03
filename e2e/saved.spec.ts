@@ -108,6 +108,51 @@ test.describe('手动保存与片段库', () => {
     expect(await getDoc(page)).toBe(K3S)
   })
 
+  test('详情页全文折行显示：超长单行不产生横向滚动', async ({ page }) => {
+    const LONG = `https://example.com/${'a'.repeat(400)}`
+    await page.goto('/')
+    await setDoc(page, LONG)
+    await saveViaToolbar(page)
+
+    const saved = await openSaved(page)
+    await saved.locator('.saved-list .history-item').first().click()
+
+    const pre = page.locator('.detail-page .detail-content')
+    await expect(pre).toBeVisible()
+    // 折行只影响排版，原文逐字不变
+    expect(await pre.textContent()).toBe(LONG)
+
+    const metrics = await pre.evaluate((el) => {
+      const style = getComputedStyle(el)
+      return {
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        scrollHeight: el.scrollHeight,
+        lineHeight: parseFloat(style.lineHeight),
+        paddingBlock: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+        whiteSpace: style.whiteSpace,
+      }
+    })
+    expect(metrics.whiteSpace).toBe('pre-wrap')
+    // 不出现横向溢出（+1 容差给亚像素取整）
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
+    // 确实折成了多行，而不是被裁掉
+    expect(metrics.scrollHeight - metrics.paddingBlock).toBeGreaterThan(metrics.lineHeight * 2)
+
+    // flex 容器未被长内容撑宽：页面 → 内容区 → pre 逐级收窄
+    const widths = await page.locator('.detail-page').evaluate((pageEl) => {
+      const wrap = pageEl.querySelector('.detail-content-wrap') as HTMLElement
+      const pre = pageEl.querySelector('.detail-content') as HTMLElement
+      return {
+        page: pageEl.clientWidth,
+        wrap: wrap.getBoundingClientRect().width,
+        pre: pre.getBoundingClientRect().width,
+      }
+    })
+    expect(widths.wrap).toBeLessThanOrEqual(widths.page)
+    expect(widths.pre).toBeLessThanOrEqual(widths.wrap)
+  })
+
   test('详情页可直接复制条目内容', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/')
