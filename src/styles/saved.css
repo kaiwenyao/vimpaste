@@ -492,6 +492,9 @@
   overflow-wrap: anywhere;
 }
 
+/* 全文区：保持 #21 的「折行、不横向滚动」。行号不做独立的 gutter 列，
+   而是每行自带（见下面的 .detail-line）：折行时长行会变成多个视觉行，
+   独立的行号列会与实际渲染的行对不上。 */
 .detail-content-wrap {
   flex: 1;
   min-width: 0;
@@ -515,6 +518,33 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: 2;
+  /* 行号列宽：默认值，页面按总行数的位数覆盖（例：3 位数 → 3ch） */
+  --detail-line-no: 2ch;
+}
+
+/* 一个逻辑行 = 左列行号 + 右列正文。行号由 ::before 从 data-line 生成：
+   生成内容不算进 <pre> 的 textContent（复制、全选、逐字断言都靠原文），
+   也不会被选区带走；content 的空 alt 文本让它不进无障碍树
+   （只写 content 而不带 / "" 时，屏幕阅读器会把行号念出来）。
+   用 block + 左侧 padding 占位，而不是 grid：grid 行会让全选的文本序列化吞掉空行。*/
+.detail-line {
+  display: block;
+  position: relative;
+  /* 为行号留位：折行后的续行也从同一条左边缘开始，不会钻到行号下面 */
+  padding-left: calc(var(--detail-line-no) + 12px);
+  /* 空行也要占一行高度，行号才不会叠在上一个行号上 */
+  min-height: 1lh;
+}
+
+.detail-line::before {
+  content: attr(data-line) / '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--detail-line-no);
+  text-align: right;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 确认对话框（未保存修改） ---------- */

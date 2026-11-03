@@ -99,6 +99,11 @@ test.describe('手动保存与片段库', () => {
     // 全文逐字保留
     const pre = detail.locator('.detail-content')
     expect(await pre.textContent()).toBe(K3S)
+    // 行号：每个逻辑行一个 .detail-line，行号由 CSS 从 data-line 生成（不进正文文本）
+    const lineRows = detail.locator('.detail-line')
+    await expect(lineRows).toHaveCount(K3S.split('\n').length)
+    await expect(lineRows.first()).toHaveAttribute('data-line', '1')
+    await expect(lineRows.last()).toHaveAttribute('data-line', String(K3S.split('\n').length))
 
     // 返回片段列表 → 返回编辑器
     await detail.getByRole('button', { name: '返回片段列表' }).click()
@@ -151,6 +156,61 @@ test.describe('手动保存与片段库', () => {
     })
     expect(widths.wrap).toBeLessThanOrEqual(widths.page)
     expect(widths.pre).toBeLessThanOrEqual(widths.wrap)
+  })
+
+  test('详情页行号：与折行正文逐行对齐，不进无障碍树也不进选区', async ({ page }) => {
+    // 含空行与超长行：验证多行、折行、空行三种情况下的行号行为
+    const LONG = `https://example.com/${'a'.repeat(300)}`
+    const MULTI = ['alpha', LONG, '', 'gamma'].join('\n')
+    await page.goto('/')
+    await setDoc(page, MULTI)
+    await saveViaToolbar(page)
+    const saved = await openSaved(page)
+    await saved.locator('.saved-list .history-item').first().click()
+
+    const pre = page.locator('.detail-page .detail-content')
+    await expect(pre).toBeVisible()
+    // 4 个逻辑行（含 1 个空行），行号与「行数」字段一致
+    const rows = pre.locator('.detail-line')
+    await expect(rows).toHaveCount(4)
+    await expect(rows.last()).toHaveAttribute('data-line', '4')
+    const lineRow = page.locator('.detail-page .detail-row', { hasText: '行数' })
+    await expect(lineRow.locator('dd')).toHaveText('4')
+
+    // 每行都是「行号列 + 正文」两栏：长行折行后该行更高，但正文仍从同一条左边缘开始
+    const geometry = await rows.evaluateAll((els) =>
+      els.map((el) => {
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        return {
+          height: Math.round(el.getBoundingClientRect().height),
+          hasText: (el.textContent ?? '').trim() !== '',
+          textLeft: Math.round(range.getBoundingClientRect().left),
+        }
+      }),
+    )
+    expect(geometry[1].height).toBeGreaterThan(geometry[0].height)
+    const textLefts = geometry.filter((g) => g.hasText).map((g) => g.textLeft)
+    expect(new Set(textLefts).size).toBe(1)
+    const preLeft = await pre.evaluate((el) => Math.round(el.getBoundingClientRect().left))
+    // 正文右移出了行号列（行号占位真实存在）
+    expect(textLefts[0]).toBeGreaterThan(preLeft + 4)
+    // 空行也占一行高度，行号不会叠在上一个行号上
+    expect(geometry[2].height).toBeGreaterThan(0)
+
+    // 行号是 CSS 生成内容：无障碍树里读不到（内容无数字，出现数字就说明行号泄进去了）
+    expect(await pre.ariaSnapshot()).not.toMatch(/[0-9]/)
+
+    // 手动全选只拿到正文（行号不参与选区，因此也不会被复制）
+    const selected = await pre.evaluate((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      return selection?.toString()
+    })
+    expect(selected).toBe(MULTI)
   })
 
   test('详情页可直接复制条目内容', async ({ page, context }) => {

@@ -585,6 +585,29 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(pre?.textContent).toBe(CONTENT)
   })
 
+  it('全文按逻辑行渲染行号：行号不进正文文本，正文仍是逐字原文', () => {
+    renderDetail({ entry: snippet({ content: 'a\nb\nc' }) })
+    const region = screen.getByRole('region', { name: '片段内容' })
+    const rows = Array.from(region.querySelectorAll('.detail-line'))
+    // 每个逻辑行一个 .detail-line，data-line 从 1 递增（行号由 CSS 从它生成）
+    expect(rows.map((el) => el.getAttribute('data-line'))).toEqual(['1', '2', '3'])
+    // 各行的文本拼回去就是原文，行号不在 DOM 文本里
+    expect(rows.map((el) => el.textContent).join('')).toBe('a\nb\nc')
+    // <pre> 逐字原文：复制与全选都靠它
+    expect(region.querySelector('pre')?.textContent).toBe('a\nb\nc')
+  })
+
+  it('尾随换行不额外算一行，但仍留在正文里（行号与「行数」一致）', () => {
+    renderDetail({ entry: snippet({ content: 'a\n' }) })
+    const region = screen.getByRole('region', { name: '片段内容' })
+    expect(region.querySelectorAll('.detail-line')).toHaveLength(1)
+    expect(region.querySelector('pre')?.textContent).toBe('a\n')
+    const ddOfRow = (label: string) =>
+      screen.getByText(label, { selector: 'dt' }).closest('.detail-row')?.querySelector('dd')
+        ?.textContent
+    expect(ddOfRow('行数')).toBe('1')
+  })
+
   it('操作按钮：返回 / 在编辑器打开 / 复制 / 置顶 / 删除（二次确认）', async () => {
     const user = userEvent.setup()
     const { props } = renderDetail()
