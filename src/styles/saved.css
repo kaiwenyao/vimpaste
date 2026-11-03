@@ -494,6 +494,7 @@
 
 .detail-content-wrap {
   flex: 1;
+  min-width: 0;
   min-height: 160px;
   display: flex;
 }
@@ -508,8 +509,11 @@
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
-  overflow: auto;
-  white-space: pre;
+  /* 全文折行：保留原文换行/缩进，但不在超长单行上产生横向滚动 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   tab-size: 2;
 }
 
