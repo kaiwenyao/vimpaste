@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { languageLabel } from '../detection/language'
 import type { Snippet } from '../storage/snippets'
-import { countWords, estimateTokens } from '../utils/textStats'
+import { countWords, estimateTokens, splitLines } from '../utils/textStats'
 import { formatFullTime, formatRelativeTime } from '../utils/time'
 import type { ApiCollection } from '../cloud/api'
 import { nextColor, sortCollections } from '../utils/collections'
@@ -96,7 +96,12 @@ export function SnippetDetailPage({
     onDelete(entry.id)
   }
 
-  const lines = entry.content.split('\n').length
+  // 逻辑行（尾随换行不额外算一行），行号列与正文共用同一份切分结果
+  const rows = splitLines(entry.content)
+  // 行号列宽按最大行号的位数留足，多行之间右对齐
+  const lineNoWidth: CSSProperties = {
+    ['--detail-line-no' as string]: `${String(rows.length).length}ch`,
+  }
   const ordered = sortCollections(collections)
   const collection = ordered.find((c) => c.id === entry.collectionId) ?? null
   const isPrompt = (entry.kind ?? 'command') === 'prompt'
@@ -173,7 +178,7 @@ export function SnippetDetailPage({
           </InfoRow>
           <InfoRow label="语言">{languageLabel(entry.langId)}</InfoRow>
           <InfoRow label="字符数">{entry.content.length}</InfoRow>
-          <InfoRow label="行数">{lines}</InfoRow>
+          <InfoRow label="行数">{rows.length}</InfoRow>
           <InfoRow label="字数">{countWords(entry.content)}</InfoRow>
           {isPrompt && (
             <InfoRow label="预估 tokens">
@@ -242,8 +247,17 @@ export function SnippetDetailPage({
         </dl>
       </div>
 
+      {/* 全文逐逻辑行渲染：每行左列是行号、右列是正文。行号用 CSS 生成内容（data-line），
+          所以 <pre> 的 textContent 仍是逐字原文（复制 / 全选 / 断言都靠它），行号也不进无障碍树。
+          逐行渲染后长行折行时行号与首行对齐，无需横向滚动（保持 #21 的折行行为）。 */}
       <section className="detail-content-wrap" aria-label="片段内容">
-        <pre className="detail-content">{entry.content}</pre>
+        <pre className="detail-content" style={lineNoWidth}>
+          {rows.map((row) => (
+            <span className="detail-line" key={row.no} data-line={row.no}>
+              {row.text}
+            </span>
+          ))}
+        </pre>
       </section>
 
       {createOpen && (
