@@ -617,8 +617,10 @@
    2. 顶部的保留期说明；
    3. 「恢复」按钮常显（回收站里最重要的动作不该藏在悬停后面）。 */
 
+/* 只清上下 margin：水平方向的 `auto` 属于 `.page > *`（限宽 880px + 居中），
+   写成 `margin: 0` 简写会把它一起清掉，说明块就被甩到页面最左边。 */
 .trash-note {
-  margin: 0;
+  margin-block: 0;
   font-size: 12px;
   color: var(--muted);
   line-height: 1.7;

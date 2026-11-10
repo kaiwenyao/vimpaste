@@ -98,6 +98,32 @@ test.describe('回收站（本地路径）', () => {
     await expect(page.getByRole('button', { name: /^恢复「curl -sfL/ })).toBeVisible()
   })
 
+  test('顶部保留期说明与列表同处一个居中内容列（不被 margin 简写甩到页面最左）', async ({
+    page,
+  }) => {
+    await saveAndDelete(page)
+    await page.getByRole('button', { name: '回收站（1 条）' }).click()
+    await expect(page.getByRole('heading', { name: '回收站' })).toBeVisible()
+
+    // 说明块是 .page 的直接子元素，靠 `.page > *` 的 margin-inline:auto 居中；
+    // 曾经 `.trash-note { margin: 0 }` 把 auto 覆盖掉，说明块单飞贴到浏览器最左边。
+    const box = (selector: string) =>
+      page.locator(selector).evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        return { left: rect.left, width: rect.width }
+      })
+
+    const note = await box('.trash-page .trash-note')
+    const topbar = await box('.trash-page .page-topbar')
+    const row = await box('.trash-page .trash-row')
+
+    // 与页头、列表行同一条左基线（1px 容差吸收亚像素/边框差）
+    expect(Math.abs(note.left - topbar.left)).toBeLessThanOrEqual(1)
+    expect(Math.abs(note.left - row.left)).toBeLessThanOrEqual(1)
+    // 仍在 880px 内容列内，没有因为丢掉 max-width 而拉满整页
+    expect(note.width).toBeLessThanOrEqual(880.5)
+  })
+
   test('彻底删除：单条与清空回收站都真的要二次确认，之后存储里再无痕迹', async ({ page }) => {
     await saveAndDelete(page)
     await page.getByRole('button', { name: '回收站（1 条）' }).click()
