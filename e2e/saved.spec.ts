@@ -276,8 +276,12 @@ test.describe('手动保存与片段库', () => {
     await expect(saved.getByText(/没有匹配「不存在的命令」的片段/)).toBeVisible()
     await saved.getByRole('textbox', { name: '搜索已保存片段' }).fill('')
 
-    // 删除单条：从列表消失，但内容仍在存储里（进回收站，30 天内可恢复）
+    // 删除单条：先弹窗确认（点删除不会直接消失），确认后进回收站，内容仍在存储里
     await saved.getByRole('button', { name: /删除「curl -sfL/ }).click()
+    const confirmDelete = page.getByRole('dialog', { name: /^删除「curl -sfL/ })
+    await expect(confirmDelete).toBeVisible()
+    await expect(saved.getByRole('button', { name: ITEM })).toBeVisible()
+    await confirmDelete.getByRole('button', { name: /^确认删除「curl -sfL/ }).click()
     await expect(saved.getByText('还没有保存过任何内容')).toBeVisible()
     const afterDelete = await page.evaluate(
       (k) => JSON.parse(localStorage.getItem(k) ?? '[]') as { deletedAt: number | null }[],

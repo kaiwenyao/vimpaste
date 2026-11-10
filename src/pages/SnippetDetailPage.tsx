@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { languageLabel } from '../detection/language'
 import type { Snippet } from '../storage/snippets'
 import { countWords, estimateTokens, splitLines } from '../utils/textStats'
@@ -6,6 +6,7 @@ import { formatFullTime, formatRelativeTime } from '../utils/time'
 import type { ApiCollection } from '../cloud/api'
 import { nextColor, sortCollections } from '../utils/collections'
 import { CollectionFormDialog, ColorDot } from '../components/CollectionDialogs'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import {
   IconCheck,
   IconCopy,
@@ -14,8 +15,6 @@ import {
   IconTerminal,
   IconTrash,
 } from '../components/icons'
-
-const CLEAR_ARM_MS = 4000
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -66,34 +65,15 @@ export function SnippetDetailPage({
   onCreateCollection,
   onKindChange,
 }: SnippetDetailPageProps) {
-  const [clearArmed, setClearArmed] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const clearTimer = useRef(0)
+  /** 删除确认对话框：点删除按钮只打开它，绝不直接落库 */
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  // 切换到另一条详情时重置删除确认状态
-  const [armedId, setArmedId] = useState(entry.id)
-  if (armedId !== entry.id) {
-    setArmedId(entry.id)
-    setClearArmed(false)
-  }
-
-  useEffect(
-    () => () => {
-      window.clearTimeout(clearTimer.current)
-    },
-    [],
-  )
-
-  const handleDelete = () => {
-    if (!clearArmed) {
-      setClearArmed(true)
-      window.clearTimeout(clearTimer.current)
-      clearTimer.current = window.setTimeout(() => setClearArmed(false), CLEAR_ARM_MS)
-      return
-    }
-    window.clearTimeout(clearTimer.current)
-    setClearArmed(false)
-    onDelete(entry.id)
+  // 切换到另一条详情时关掉上一条留下的确认框，避免误删
+  const [detailId, setDetailId] = useState(entry.id)
+  if (detailId !== entry.id) {
+    setDetailId(entry.id)
+    setConfirmOpen(false)
   }
 
   // 逻辑行（尾随换行不额外算一行），行号列与正文共用同一份切分结果
@@ -150,12 +130,12 @@ export function SnippetDetailPage({
         </button>
         <button
           type="button"
-          className={`btn ghost ${clearArmed ? 'danger' : ''}`}
-          aria-label={clearArmed ? '确认删除该条目' : '删除该条目'}
-          onClick={handleDelete}
+          className="btn ghost"
+          aria-label="删除该条目"
+          onClick={() => setConfirmOpen(true)}
         >
           <IconTrash size={14} />
-          <span aria-hidden="true">{clearArmed ? '确认删除？' : '删除'}</span>
+          <span aria-hidden="true">删除</span>
         </button>
       </header>
 
@@ -259,6 +239,20 @@ export function SnippetDetailPage({
           ))}
         </pre>
       </section>
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title={`删除「${entry.title}」？`}
+          message={`这条${isPrompt ? 'Prompt' : '命令'}会移入回收站，30 天内仍可恢复。`}
+          confirmLabel="移入回收站"
+          confirmAriaLabel="确认删除该条目"
+          onConfirm={() => {
+            setConfirmOpen(false)
+            onDelete(entry.id)
+          }}
+          onClose={() => setConfirmOpen(false)}
+        />
+      )}
 
       {createOpen && (
         <CollectionFormDialog

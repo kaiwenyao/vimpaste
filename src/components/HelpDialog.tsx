@@ -77,7 +77,7 @@ export function HelpDialog({
         </p>
       </Section>
       <Section title="回收站与删除">
-        <Row keys="片段库 / 详情页 · 删除" desc="删除进回收站，不再立即消失" />
+        <Row keys="片段库 / 详情页 · 删除" desc="弹窗确认后进回收站，可恢复" />
         <Row keys="片段库页脚 · 回收站" desc="打开回收站，可恢复或彻底删除" />
         <Row keys="回收站 · 清空回收站" desc="一次性彻底删除全部回收站内容（需二次确认）" />
         <p className="help-note">

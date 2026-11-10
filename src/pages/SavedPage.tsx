@@ -6,6 +6,7 @@ import type { ApiCollection, CollectionPatch } from '../cloud/api'
 import { nextColor } from '../utils/collections'
 import { CollectionFormDialog, ColorDot } from '../components/CollectionDialogs'
 import { CollectionMoveMenu } from '../components/CollectionMoveMenu'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { CollectionPanel } from '../components/CollectionPanel'
 import {
   IconDownload,
@@ -116,6 +117,8 @@ export function SavedPage(props: SavedPageProps) {
 
   const [query, setQuery] = useState('')
   const [clearArmed, setClearArmed] = useState(false)
+  /** 等待二次确认的待删除条目：删除入口只负责打开对话框，绝不直接落库 */
+  const [pendingDelete, setPendingDelete] = useState<Snippet | null>(null)
   /** 行内「新建收藏夹…」：创建成功后把这条片段移进新收藏夹 */
   const [createForEntry, setCreateForEntry] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -362,7 +365,7 @@ export function SavedPage(props: SavedPageProps) {
                       type="button"
                       className="btn icon history-item-delete"
                       aria-label={`删除「${entry.title}」`}
-                      onClick={() => onDeleteEntry(entry.id)}
+                      onClick={() => setPendingDelete(entry)}
                     >
                       <IconTrash size={13} />
                     </button>
@@ -416,6 +419,21 @@ export function SavedPage(props: SavedPageProps) {
         <span className="history-note">已登录 · 同步到自托管服务器 · 敏感条目请开「仅本地」</span>
       ) : (
         <span className="history-note">仅保存在本浏览器 · 不上传</span>
+      )}
+
+      {/* 删除进回收站：命令与 Prompt 一视同仁，先弹窗确认再落库 */}
+      {pendingDelete !== null && (
+        <ConfirmDialog
+          title={`删除「${pendingDelete.title}」？`}
+          message={`这条${pendingDelete.kind === 'prompt' ? 'Prompt' : '命令'}会移入回收站，30 天内仍可恢复。`}
+          confirmLabel="移入回收站"
+          confirmAriaLabel={`确认删除「${pendingDelete.title}」`}
+          onConfirm={() => {
+            onDeleteEntry(pendingDelete.id)
+            setPendingDelete(null)
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
       )}
 
       {/* 行内「新建收藏夹…」：创建成功后直接把该条目移进去，少一次来回 */}

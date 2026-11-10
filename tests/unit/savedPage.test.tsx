@@ -102,8 +102,38 @@ describe('SavedPage（已保存片段库）', () => {
     expect(props.onOpenInEditor).toHaveBeenCalledWith('e1')
     await user.click(screen.getByRole('button', { name: /置顶「curl -sfL/ }))
     expect(props.onTogglePin).toHaveBeenCalledWith('e1')
-    await user.click(screen.getByRole('button', { name: /删除「curl -sfL/ }))
+    // 删除需弹窗二次确认：打开对话框本身不删，取消也不删
+    await user.click(screen.getByRole('button', { name: /^删除「curl -sfL/ }))
+    expect(props.onDeleteEntry).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: /^删除「curl -sfL/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(props.onDeleteEntry).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 确认后才真的回调删除
+    await user.click(screen.getByRole('button', { name: /^删除「curl -sfL/ }))
+    await user.click(screen.getByRole('button', { name: /^确认删除「curl -sfL/ }))
     expect(props.onDeleteEntry).toHaveBeenCalledWith('e1')
+  })
+
+  it('删除确认对话框说明会进回收站，命令与 Prompt 都带上类型', async () => {
+    const user = userEvent.setup()
+    renderSavedPage({
+      entries: [
+        snippet({ id: 'c', title: '一条命令', kind: 'command' }),
+        snippet({ id: 'p', title: '一条提示', kind: 'prompt', langId: 'plaintext' }),
+      ],
+    })
+
+    await user.click(screen.getByRole('button', { name: '删除「一条命令」' }))
+    expect(screen.getByRole('dialog', { name: '删除「一条命令」？' })).toHaveTextContent(
+      '这条命令会移入回收站，30 天内仍可恢复。',
+    )
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    await user.click(screen.getByRole('button', { name: '删除「一条提示」' }))
+    expect(screen.getByRole('dialog', { name: '删除「一条提示」？' })).toHaveTextContent(
+      '这条Prompt会移入回收站，30 天内仍可恢复。',
+    )
   })
 
   it('列表同时标出命令和 Prompt', () => {
@@ -620,9 +650,19 @@ describe('SnippetDetailPage（条目详情）', () => {
     await user.click(screen.getByRole('button', { name: '置顶' }))
     expect(props.onTogglePin).toHaveBeenCalledWith('e1')
 
-    // 删除需二次确认
+    // 删除需弹窗二次确认：点删除只打开对话框
     await user.click(screen.getByRole('button', { name: '删除该条目' }))
     expect(props.onDelete).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('dialog', {
+        name: "删除「curl -sfL https://get.k3s.io | K3S_TOKEN='…' sh -s - server」？",
+      }),
+    ).toHaveTextContent('这条命令会移入回收站，30 天内仍可恢复。')
+    // 取消不删
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(props.onDelete).not.toHaveBeenCalled()
+    // 确认才删
+    await user.click(screen.getByRole('button', { name: '删除该条目' }))
     await user.click(screen.getByRole('button', { name: '确认删除该条目' }))
     expect(props.onDelete).toHaveBeenCalledWith('e1')
   })
