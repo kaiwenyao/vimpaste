@@ -31,7 +31,14 @@ async function saveAndDelete(page: Page) {
   await setDoc(page, K3S)
   await saveViaToolbar(page)
   const saved = await openSaved(page)
+  // 删除要先过确认对话框：点完删除按钮列表还在，确认后才进回收站
   await saved.getByRole('button', { name: /删除「curl -sfL/ }).click()
+  await page
+    .getByRole('dialog', { name: /^删除「curl -sfL/ })
+    .getByRole('button', {
+      name: /^确认删除「curl -sfL/,
+    })
+    .click()
   await expect(saved.getByText('还没有保存过任何内容')).toBeVisible()
 }
 

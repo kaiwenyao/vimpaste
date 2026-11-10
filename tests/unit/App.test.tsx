@@ -756,6 +756,10 @@ describe('「已保存」片段库页面与详情页', () => {
     await openSaved(user)
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
 
+    // 点删除只会弹出确认框：列表原封不动，确认后才进回收站
+    expect(screen.getByText('curl 命令')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认删除「curl 命令」' }))
+
     // 列表里消失了，但内容仍在存储里（deletedAt 墓碑）：这正是回收站的意义
     expect(screen.queryByText('curl 命令')).not.toBeInTheDocument()
     const afterDelete = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
@@ -801,6 +805,7 @@ describe('「已保存」片段库页面与详情页', () => {
     render(<App />)
     await openSaved(user)
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+    await user.click(screen.getByRole('button', { name: '确认删除「curl 命令」' }))
 
     // 入口角标显示回收站里有 1 条，点进回收站能看到它
     await user.click(screen.getByRole('button', { name: '回收站（1 条）' }))
@@ -817,6 +822,7 @@ describe('「已保存」片段库页面与详情页', () => {
 
     // 再删一次 → 这次彻底删除
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+    await user.click(screen.getByRole('button', { name: '确认删除「curl 命令」' }))
     await user.click(screen.getByRole('button', { name: '回收站（1 条）' }))
     await user.click(screen.getByRole('button', { name: '彻底删除「curl 命令」' }))
     expect(screen.getByText('curl 命令')).toBeInTheDocument()
@@ -844,6 +850,7 @@ describe('「已保存」片段库页面与详情页', () => {
     render(<App />)
     await openSaved(user)
     await user.click(screen.getByRole('button', { name: '删除「curl 命令」' }))
+    await user.click(screen.getByRole('button', { name: '确认删除「curl 命令」' }))
 
     // 直接访问 #/trash（刷新/收藏夹直达的路径）
     window.location.hash = '#/trash'
