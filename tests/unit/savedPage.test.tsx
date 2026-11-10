@@ -106,6 +106,11 @@ describe('SavedPage（已保存片段库）', () => {
     await user.click(screen.getByRole('button', { name: /^删除「curl -sfL/ }))
     expect(props.onDeleteEntry).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: /^删除「curl -sfL/ })).toBeInTheDocument()
+    // 遮罩必须挂到 body 上：留在 .page 里会被 `.page > *` 的 880px 限宽压成一条竖条
+    const backdrop = document.querySelector('.dialog-backdrop')
+    expect(backdrop).not.toBeNull()
+    expect(backdrop?.parentElement).toBe(document.body)
+    expect(document.querySelector('.page')?.contains(backdrop)).toBe(false)
     await user.click(screen.getByRole('button', { name: '取消' }))
     expect(props.onDeleteEntry).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

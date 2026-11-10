@@ -280,6 +280,16 @@ test.describe('手动保存与片段库', () => {
     await saved.getByRole('button', { name: /删除「curl -sfL/ }).click()
     const confirmDelete = page.getByRole('dialog', { name: /^删除「curl -sfL/ })
     await expect(confirmDelete).toBeVisible()
+    // 遮罩必须铺满整个视口：挂在 .page 里时会被 `.page > *` 的 880px 限宽压成中间一条竖条
+    const backdropBox = await page.locator('.dialog-backdrop').boundingBox()
+    const viewport = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
+    }))
+    expect(backdropBox?.x).toBe(0)
+    expect(backdropBox?.y).toBe(0)
+    expect(backdropBox?.width).toBe(viewport.width)
+    expect(backdropBox?.height).toBe(viewport.height)
     await expect(saved.getByRole('button', { name: ITEM })).toBeVisible()
     await confirmDelete.getByRole('button', { name: /^确认删除「curl -sfL/ }).click()
     await expect(saved.getByText('还没有保存过任何内容')).toBeVisible()
