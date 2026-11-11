@@ -14,13 +14,27 @@ if (!existsSync(dist)) {
   process.exit(1)
 }
 
-// registerSW 逻辑已打包进入口 JS（injectRegister: null），不再单独产出 registerSW.js
+// 应用按设计不做离线缓存（不注册 Service Worker）：manifest.webmanifest 与 sw.js
+// 都是 public/ 里的静态文件，其中 sw.js 只是接管旧版本 Workbox SW 的退役脚本。
 const required = ['index.html', 'manifest.webmanifest', 'sw.js', 'favicon.svg']
 for (const f of required) {
   if (!existsSync(path.join(dist, f))) {
     console.error(`构建产物缺少 ${f}`)
     process.exit(1)
   }
+}
+
+// 防回归：一旦有人把 PWA 插件（workbox generateSW）加回来，构建产物里会出现
+// workbox-*.js 和带 precache 清单的 sw.js，那就会重新出现「发现新版本」提示条。
+const workboxRuntime = readdirSync(dist).filter((name) => /^workbox-.*\.js$/.test(name))
+if (workboxRuntime.length > 0) {
+  console.error(`构建产物出现了 Workbox 运行时（${workboxRuntime.join(', ')}）：应用不该做离线缓存`)
+  process.exit(1)
+}
+const swSource = readFileSync(path.join(dist, 'sw.js'), 'utf8')
+if (swSource.includes('precacheAndRoute')) {
+  console.error('dist/sw.js 含 precache 清单：sw.js 应只是退役脚本（见 public/sw.js）')
+  process.exit(1)
 }
 
 const rows = []

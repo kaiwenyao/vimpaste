@@ -51,6 +51,13 @@ export default tseslint.config(
     },
   },
   {
+    // Service Worker 退役脚本（public/sw.js）跑在 serviceworker 全局环境里
+    files: ['public/sw.js'],
+    languageOptions: {
+      globals: { ...globals.serviceworker },
+    },
+  },
+  {
     files: ['vite.config.ts', 'playwright.config.ts', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: { ...globals.node, window: 'readonly', document: 'readonly' },
