@@ -65,8 +65,7 @@ input:focus-visible,
 .statusbar,
 .page,
 .dialog,
-.hint,
-.update-banner {
+.hint {
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,

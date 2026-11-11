@@ -82,8 +82,6 @@ declare global {
       setSel(pos: number): void
       getSelection(): { anchor: number; head: number; from: number; to: number }
     }
-    /** 由 main.tsx 注册：激活等待中的新 Service Worker 并刷新页面 */
-    __vimpasteApplyUpdate?: (reloadPage?: boolean) => Promise<void>
   }
 }
 
@@ -132,7 +130,6 @@ export default function App() {
   const [clearArmed, setClearArmed] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null)
-  const [swUpdateReady, setSwUpdateReady] = useState(false)
   // 云端（VITE_CLOUD_ENABLED）状态；匿名构建恒为 null / idle
   const [cloudUser, setCloudUser] = useState<{ email: string } | null>(null)
   const [cloudSession, setCloudSession] = useState<CloudSession | null>(null)
@@ -269,13 +266,6 @@ export default function App() {
   useEffect(() => () => window.clearTimeout(toastTimer.current), [])
   useEffect(() => () => window.clearTimeout(clearTimer.current), [])
   useEffect(() => () => window.clearTimeout(copyTimer.current), [])
-
-  // 新版本 Service Worker 就绪：显示更新提示条（用户点击才刷新）
-  useEffect(() => {
-    const onUpdateReady = () => setSwUpdateReady(true)
-    window.addEventListener('vimpaste:update-ready', onUpdateReady)
-    return () => window.removeEventListener('vimpaste:update-ready', onUpdateReady)
-  }, [])
 
   // 云端会话静默恢复（VITE_CLOUD_ENABLED 构建；匿名构建整段摇掉）
   useEffect(() => {
@@ -1279,20 +1269,6 @@ export default function App() {
           accountLabel={cloudUser ? cloudUser.email.split('@')[0] : null}
           onOpenAccount={() => setAccountOpen(true)}
         />
-
-        {swUpdateReady && (
-          <div className="update-banner" role="status">
-            <span>发现新版本，点击刷新以更新离线缓存</span>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => void window.__vimpasteApplyUpdate?.(true)}
-            >
-              立即刷新
-            </button>
-          </div>
-        )}
-
         <div className="app-body">
           <main className="editor-area">
             {!hintDismissed && (

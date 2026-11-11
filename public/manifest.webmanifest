@@ -1,0 +1,21 @@
+{
+  "name": "VimPaste — 支持 Vim 的临时代码编辑器",
+  "short_name": "VimPaste",
+  "description": "为 AI 生成命令准备的、支持 Vim 的临时代码编辑器。所有内容仅在浏览器本地处理。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#211c17",
+  "theme_color": "#211c17",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
