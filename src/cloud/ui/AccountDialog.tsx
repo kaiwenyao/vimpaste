@@ -86,7 +86,11 @@ export function AccountDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title={step === 'account' ? '账号' : '登录 VimPaste 云端'}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={step === 'account' ? '账号' : '登录 VimPaste 云端'}
+    >
       {step === 'auth' && (
         <form
           className="account-form"
@@ -154,7 +158,7 @@ export function AccountDialog({
             本机有 <strong>{pendingSession?.localUnsynced.length ?? 0}</strong>{' '}
             条历史记录，合并到云端后可在所有设备上使用。
           </p>
-          <p className="account-hint">含「仅本地」标记的条目不会上传。</p>
+          <p className="account-hint">标记为「不同步」的条目不会上传。</p>
           <div className="account-actions">
             <button type="button" className="btn primary" onClick={() => handleMergeChoice(true)}>
               合并到云端

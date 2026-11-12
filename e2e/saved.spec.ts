@@ -93,7 +93,7 @@ test.describe('手动保存与片段库', () => {
     await expect(rowFor('语言').locator('dd')).toHaveText('Shell / Bash')
     await expect(rowFor('字符数').locator('dd')).toHaveText(String(K3S.length))
     await expect(rowFor('行数').locator('dd')).toHaveText(String(K3S.split('\n').length))
-    await expect(rowFor('同步状态').locator('dd')).toContainText('仅保存在本机')
+    await expect(rowFor('同步状态').locator('dd')).toContainText('只保存在本机')
     await expect(rowFor('创建时间').locator('dd')).toContainText(/\d{4} 年 \d{1,2} 月 \d{1,2} 日/)
     await expect(rowFor('更新时间').locator('dd')).toContainText(/\d{4} 年 \d{1,2} 月 \d{1,2} 日/)
     // 全文逐字保留
@@ -485,5 +485,26 @@ test.describe('片段标题与备注；新片段 / 编辑中 标识', () => {
 
     await saveViaToolbar(page)
     await expect(page).toHaveTitle(/^VimPaste — /)
+  })
+
+  test('编辑中条目栏不再出现置顶图钉与「仅本地」开关', async ({ page }) => {
+    await page.goto('/')
+    await setDoc(page, K3S)
+    await saveViaToolbar(page)
+
+    const bar = page.locator('.entry-meta')
+    await expect(bar).toBeVisible()
+    await expect(bar.getByRole('textbox', { name: '片段标题' })).toBeVisible()
+    await expect(bar.getByRole('textbox', { name: '标签（逗号分隔）' })).toBeVisible()
+    await expect(bar.getByRole('button', { name: /置顶/ })).toHaveCount(0)
+    await expect(bar.getByRole('switch')).toHaveCount(0)
+    await expect(bar.getByText('仅本地')).toHaveCount(0)
+
+    // 控件收干净后条目栏不应把页面撑出横向滚动
+    const overflow = await page.evaluate(() => {
+      const el = document.documentElement
+      return el.scrollWidth - el.clientWidth
+    })
+    expect(overflow).toBeLessThanOrEqual(1)
   })
 })

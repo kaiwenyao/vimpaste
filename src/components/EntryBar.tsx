@@ -2,21 +2,22 @@ import { useEffect, useState } from 'react'
 import type { Snippet, SnippetKind } from '../storage/snippets'
 import { SNIPPET_NOTE_MAX_CHARS, SNIPPET_TITLE_MAX_CHARS } from '../storage/snippets'
 import type { ApiCollection } from '../cloud/api'
-import { IconCheck, IconCopy, IconLock, IconPin } from './icons'
+import { IconCheck, IconCopy } from './icons'
 
 /**
- * 条目元信息条（plan-v2-accounts.md §5/§7.4/§8）：
- * 当前编辑条目的 标题/备注、置顶、仅本地开关、标签与收藏夹编辑。
+ * 条目元信息条（plan-v2-accounts.md §5/§8）：
+ * 当前编辑条目的 标题/备注、类型、标签与收藏夹编辑。
  * 开头的「编辑中」徽标 + 保存状态文案向用户明示：编辑器里是已有片段（不是新片段），
  * 以及这份内容是否已经入库——与工具栏「保存修改」按钮一一对应。
- * 「仅本地」做在显眼位置——用户会往里存真实密钥（§10 风险 2）。
+ *
+ * 置顶不在这里：片段库行内与详情页都有带文字的置顶入口，编辑器栏不再重复一个
+ * 没有文字说明的图钉。「不同步」也不在这里：它只对登录后的云同步有意义，
+ * 入口在详情页「同步状态」里（匿名本地版没有可同步的对象，不需要这个开关）。
  */
 export function EntryMetaBar({
   entry,
   dirty,
   collections,
-  onTogglePin,
-  onToggleLocalOnly,
   onTagsChange,
   onCollectionChange,
   onTitleChange,
@@ -27,8 +28,6 @@ export function EntryMetaBar({
   /** 编辑器内容与这条已保存片段不一致（未保存修改）时置真 */
   dirty?: boolean
   collections: ApiCollection[]
-  onTogglePin: (id: string) => void
-  onToggleLocalOnly: (id: string) => void
   onTagsChange: (id: string, tags: string[]) => void
   onCollectionChange: (id: string, collectionId: number | null) => void
   onTitleChange: (id: string, title: string) => void
@@ -121,28 +120,6 @@ export function EntryMetaBar({
           if (e.key === 'Enter') commitNote()
         }}
       />
-
-      <button
-        type="button"
-        className={`btn ghost icon ${entry.pinned ? 'sage' : ''}`}
-        aria-label={entry.pinned ? '取消置顶' : '置顶'}
-        title={entry.pinned ? '取消置顶' : '置顶'}
-        onClick={() => onTogglePin(entry.id)}
-      >
-        <IconPin size={13} />
-      </button>
-
-      <label className="switch small" title="仅本地的条目永不离开浏览器，换设备不可见">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={entry.localOnly === true}
-          onChange={() => onToggleLocalOnly(entry.id)}
-        />
-        <span>
-          <IconLock size={10} /> 仅本地
-        </span>
-      </label>
 
       <input
         type="text"

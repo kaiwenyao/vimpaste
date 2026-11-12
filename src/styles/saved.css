@@ -334,7 +334,7 @@
   text-align: center;
 }
 
-/* ---------- 类型筛选 chips / 置顶与仅本地标记 ---------- */
+/* ---------- 类型筛选 chips / 置顶与不同步标记 ---------- */
 
 .history-kind-chips {
   display: flex;
@@ -479,6 +479,24 @@
   margin-left: 6px;
   font-size: 11.5px;
   color: var(--muted-2);
+}
+
+/* 同步状态：状态文案 +「不同步」开关；窄屏时开关折到下一行 */
+.detail-sync {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.detail-sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.detail-sync-toggle {
+  font-size: 12px;
 }
 
 .detail-tags {

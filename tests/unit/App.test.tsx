@@ -561,6 +561,25 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     expect(screen.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
   })
 
+  it('编辑中条目栏不再放无文字的置顶与「仅本地」开关', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<App />)
+    setDoc(K3S)
+    await clickSave(user)
+
+    const bar = container.querySelector('.entry-meta')
+    expect(bar).not.toBeNull()
+    const meta = within(bar as HTMLElement)
+    expect(meta.queryByRole('button', { name: /置顶/ })).not.toBeInTheDocument()
+    expect(meta.queryByRole('switch')).not.toBeInTheDocument()
+    expect(meta.queryByText('仅本地')).not.toBeInTheDocument()
+    // 高频编辑控件仍在：标题、备注、标签、类型
+    expect(meta.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
+    expect(meta.getByRole('textbox', { name: '片段备注' })).toBeInTheDocument()
+    expect(meta.getByRole('textbox', { name: '标签（逗号分隔）' })).toBeInTheDocument()
+    expect(meta.getByRole('combobox', { name: '片段类型' })).toBeInTheDocument()
+  })
+
   it('多条目时，粘贴后保存写回当前打开的条目，不影响其它条目', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -724,7 +743,7 @@ describe('「已保存」片段库页面与详情页', () => {
     expect(screen.getByText('Shell / Bash', { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getByText(String(K3S.length), { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getByText(String(K3S.split('\n').length), { selector: 'dd' })).toBeInTheDocument()
-    expect(screen.getByText('仅保存在本机')).toBeInTheDocument()
+    expect(screen.getByText('只保存在本机')).toBeInTheDocument()
     const pre = screen.getByRole('region', { name: '片段内容' }).querySelector('pre')
     expect(pre?.textContent).toBe(K3S)
 
