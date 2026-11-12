@@ -324,9 +324,9 @@ export function SavedPage(props: SavedPageProps) {
                           </span>
                         )}
                         {entry.localOnly === true && (
-                          <span className="tag local-only" aria-label="仅本地，不同步">
+                          <span className="tag local-only" aria-label="只保存在本机，不同步">
                             <IconLock size={9} />
-                            仅本地
+                            不同步
                           </span>
                         )}
                         {entry.id === activeId && <span className="tag accent">编辑中</span>}
@@ -416,7 +416,9 @@ export function SavedPage(props: SavedPageProps) {
       </footer>
 
       {cloudMode ? (
-        <span className="history-note">已登录 · 同步到自托管服务器 · 敏感条目请开「仅本地」</span>
+        <span className="history-note">
+          已登录 · 同步到自托管服务器 · 敏感条目请在详情页设为「不同步」
+        </span>
       ) : (
         <span className="history-note">仅保存在本浏览器 · 不上传</span>
       )}

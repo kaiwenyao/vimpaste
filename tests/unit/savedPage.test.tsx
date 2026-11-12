@@ -588,7 +588,31 @@ describe('SnippetDetailPage（条目详情）', () => {
     expect(
       screen.getByText(String(CONTENT.split('\n').length), { selector: 'dd' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('仅保存在本机')).toBeInTheDocument()
+    expect(screen.getByText('只保存在本机')).toBeInTheDocument()
+  })
+
+  it('未登录（未传 onToggleLocalOnly）时详情页不显示不同步开关', () => {
+    renderDetail()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+
+  it('登录云同步时：不同步开关反映 localOnly，点击调用回调', async () => {
+    const user = userEvent.setup()
+    const onToggleLocalOnly = vi.fn()
+    renderDetail({ onToggleLocalOnly })
+    const toggle = screen.getByRole('switch', { name: '只保存在本机，不同步到服务器' })
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+    expect(onToggleLocalOnly).toHaveBeenCalledWith('e1')
+  })
+
+  it('localOnly 条目：开关为开，同步状态写明只保存在本机', () => {
+    renderDetail({
+      entry: snippet({ localOnly: true, syncState: 'local' }),
+      onToggleLocalOnly: vi.fn(),
+    })
+    expect(screen.getByRole('switch', { name: '只保存在本机，不同步到服务器' })).toBeChecked()
+    expect(screen.getByText('只保存在本机 · 不同步')).toBeInTheDocument()
   })
 
   it('创建/更新时间包含相对时间，标签逐一渲染', () => {

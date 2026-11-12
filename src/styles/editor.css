@@ -166,32 +166,19 @@
 .entry-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   padding: 6px 14px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
-.entry-meta .switch.small {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.entry-meta .switch.small input {
-  accent-color: var(--switch-checked);
-  width: 14px;
-  height: 14px;
-}
-
-.entry-meta .switch.small span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* 下拉与三个输入共用同一条基线：条目栏不再因为 32px 的图标按钮忽高忽低 */
+.entry-meta .entry-title,
+.entry-meta .entry-note,
+.entry-meta .entry-tags,
+.entry-meta .select.small {
+  height: 26px;
 }
 
 .entry-tags {
@@ -209,6 +196,11 @@
 
 .entry-tags::placeholder {
   color: var(--muted-2);
+}
+
+.entry-tags:focus {
+  outline: none;
+  border-color: var(--accent-border);
 }
 
 /* —— 新片段 / 编辑中 的身份标识与标题、备注输入 —— */

@@ -27,10 +27,10 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
 
 /** 同步状态的展示文案：匿名恒为 local；云端区分 已同步 / 待同步 */
 function syncLabel(entry: Snippet): string {
-  if (entry.localOnly) return '仅本地 · 不同步'
+  if (entry.localOnly) return '只保存在本机 · 不同步'
   if (entry.syncState === 'synced') return '已同步到云端'
   if (entry.syncState === 'pending') return '待同步'
-  return '仅保存在本机'
+  return '只保存在本机'
 }
 
 export interface SnippetDetailPageProps {
@@ -41,6 +41,8 @@ export interface SnippetDetailPageProps {
   /** App 统一处理复制（剪贴板降级 + 反馈提示） */
   onCopy: (entry: Snippet) => void
   onTogglePin: (id: string) => void
+  /** 登录云同步时传入：详情页提供「不同步」开关；匿名 / 未登录不传，不渲染 */
+  onToggleLocalOnly?: (id: string) => void
   onDelete: (id: string) => void
   /** 云端模式：把条目移到收藏夹（null = 未分类）；不传则收藏夹是只读文本 */
   onMoveEntry?: (entryId: string, collectionId: number | null) => void
@@ -60,6 +62,7 @@ export function SnippetDetailPage({
   onOpenInEditor,
   onCopy,
   onTogglePin,
+  onToggleLocalOnly,
   onDelete,
   onMoveEntry,
   onCreateCollection,
@@ -222,7 +225,26 @@ export function SnippetDetailPage({
           </InfoRow>
           <InfoRow label="置顶">{entry.pinned ? '是' : '否'}</InfoRow>
           <InfoRow label="同步状态">
-            {entry.localOnly && <IconLock size={11} />} {syncLabel(entry)}
+            <span className="detail-sync">
+              <span className="detail-sync-status">
+                {entry.localOnly && <IconLock size={11} />} {syncLabel(entry)}
+              </span>
+              {onToggleLocalOnly !== undefined && (
+                <label
+                  className="switch detail-sync-toggle"
+                  title="开启后这条片段只保存在本机，不同步到服务器"
+                >
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="只保存在本机，不同步到服务器"
+                    checked={entry.localOnly === true}
+                    onChange={() => onToggleLocalOnly?.(entry.id)}
+                  />
+                  <span>不同步</span>
+                </label>
+              )}
+            </span>
           </InfoRow>
         </dl>
       </div>

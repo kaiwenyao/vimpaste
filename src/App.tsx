@@ -814,14 +814,14 @@ export default function App() {
     })
   }, [])
 
-  /** 「仅本地」开关（§7.4）：已同步条目先向服务端发一次删除再转本地 */
+  /** 「不同步」开关（§7.4）：已同步条目先向服务端发一次删除再转本地 */
   const handleToggleLocalOnly = useCallback((id: string) => {
     const entry = libraryRef.current.find((e) => e.id === id)
     if (!entry) return
     const session = sessionRef.current
     const now = Date.now()
     if (entry.localOnly) {
-      // 解除仅本地：转为待同步条目（钩子会入队推送）
+      // 解除不同步：转为待同步条目（钩子会入队推送）
       storeRef.current.upsert({
         ...entry,
         localOnly: false,
@@ -1291,8 +1291,6 @@ export default function App() {
                 entry={activeEntry}
                 dirty={dirty}
                 collections={collections}
-                onTogglePin={handleTogglePin}
-                onToggleLocalOnly={handleToggleLocalOnly}
                 onTagsChange={handleTagsChange}
                 onCollectionChange={handleCollectionChange}
                 onTitleChange={handleTitleChange}
@@ -1400,6 +1398,7 @@ export default function App() {
             onOpenInEditor={handleOpenEntry}
             onCopy={(entry) => void handleCopyEntry(entry)}
             onTogglePin={handleTogglePin}
+            onToggleLocalOnly={cloudUser !== null ? handleToggleLocalOnly : undefined}
             onDelete={handleDeleteFromDetail}
             onMoveEntry={cloudUser !== null ? handleCollectionChange : undefined}
             onCreateCollection={cloudUser !== null ? handleCreateCollection : undefined}
