@@ -437,21 +437,30 @@ describe('手动保存（唯一的入库入口）', () => {
     expect(titles.some((t) => t.startsWith('curl -sfL'))).toBe(true)
   })
 
-  it('在当前条目上粘贴全新内容后保存产生新条目，不覆盖旧条目', async () => {
+  it('编辑已有片段时粘贴新内容：保存写回原条目，不产生副本', async () => {
     const user = userEvent.setup()
     render(<App />)
     setDoc(K3S)
     await clickSave(user)
-    // 模拟选中全部后直接粘贴新命令（不清空）：编辑器触发 paste 事件
+    // 真实粘贴（DOM paste 事件）+ 内容整体替换：粘贴不得改变正在编辑的条目
     const cmContent = document.querySelector('.cm-content')
     expect(cmContent).not.toBeNull()
     fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
     setDoc('kubectl get nodes -o wide')
+
+    // 身份不变：仍是「编辑中」，保存按钮仍是「保存修改」
+    expect(await screen.findByText('编辑中')).toBeInTheDocument()
+    expect(screen.queryByText('新片段')).not.toBeInTheDocument()
     await clickSave(user)
-    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as { title: string }[]
-    expect(list).toHaveLength(2)
-    expect(list.map((e) => e.title).some((t) => t.startsWith('curl -sfL'))).toBe(true)
-    expect(list.map((e) => e.title).some((t) => t.startsWith('kubectl'))).toBe(true)
+    expect(screen.queryByRole('dialog', { name: '保存为哪种片段？' })).not.toBeInTheDocument()
+
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      title: string
+      content: string
+    }[]
+    expect(list).toHaveLength(1)
+    expect(list[0].content).toBe('kubectl get nodes -o wide')
+    expect(list[0].title.startsWith('kubectl')).toBe(true)
   })
 
   it('与最近一条内容相同时复用条目，不重复堆积', async () => {
@@ -543,12 +552,45 @@ describe('片段标题与备注；新片段 / 编辑中 的身份标识', () => 
     expect(screen.queryByText('新片段')).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
 
-    // 真实粘贴新内容：与条目解除关联，回到「新片段」
+    // 真实粘贴只改内容：仍与条目关联，不回到「新片段」
     const cmContent = document.querySelector('.cm-content')
     fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
     setDoc('kubectl get nodes -o wide')
-    expect(await screen.findByText('新片段')).toBeInTheDocument()
-    expect(screen.queryByText('编辑中')).not.toBeInTheDocument()
+    expect(await screen.findByText('编辑中')).toBeInTheDocument()
+    expect(screen.queryByText('新片段')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '片段标题' })).toBeInTheDocument()
+  })
+
+  it('多条目时，粘贴后保存写回当前打开的条目，不影响其它条目', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const DOCKER = 'docker run -d -p 80:80 nginx'
+    // 条目 A：K3S
+    setDoc(K3S)
+    await clickSave(user)
+    // 条目 B：清空是显式的新片段边界
+    await user.click(screen.getByRole('button', { name: '清空编辑器' }))
+    await user.click(screen.getByRole('button', { name: '确认清空全部内容' }))
+    setDoc(DOCKER)
+    await clickSave(user)
+
+    // 打开 A，粘贴替换内容后保存
+    await openSaved(user)
+    await user.click(screen.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }))
+    const cmContent = document.querySelector('.cm-content')
+    fireEvent(cmContent as Element, new Event('paste', { bubbles: true, cancelable: true }))
+    setDoc(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+    await clickSave(user)
+
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as {
+      title: string
+      content: string
+    }[]
+    expect(list).toHaveLength(2)
+    expect(list.find((e) => e.title.startsWith('curl -sfL'))?.content).toBe(
+      K3S.replace('YOUR_TOKEN', 'MY_TOKEN'),
+    )
+    expect(list.find((e) => e.title.startsWith('docker run'))?.content).toBe(DOCKER)
   })
 
   it('新片段的标题/备注草稿随保存入库；保存后草稿清空', async () => {

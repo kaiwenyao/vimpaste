@@ -30,7 +30,6 @@ export function CodeMirrorEditor({ editorMode, onReady, callbacks }: CodeMirrorE
         onCursor: (l, c) => callbacksRef.current.onCursor(l, c),
         onPlaceholderCount: (n) => callbacksRef.current.onPlaceholderCount(n),
         onVimMode: (m) => callbacksRef.current.onVimMode(m),
-        onPaste: () => callbacksRef.current.onPaste?.(),
       },
       { editorMode: initialMode },
     )

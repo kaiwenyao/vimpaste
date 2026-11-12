@@ -407,6 +407,41 @@ test.describe('片段标题与备注；新片段 / 编辑中 标识', () => {
     expect(stored).toContain('MY_TOKEN')
     expect(stored).not.toContain('YOUR_TOKEN')
   })
+  test('编辑已有片段时真实粘贴只修改内容，保存写回本条', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/')
+    await setDoc(page, K3S)
+    await saveViaToolbar(page)
+
+    // 从片段库打开这条，进入「编辑中」
+    const saved = await openSaved(page)
+    await saved.getByRole('button', { name: /在编辑器中打开「curl -sfL/ }).click()
+    await expect(page.locator('.meta-badge.edit')).toBeVisible()
+
+    // 真实剪贴板粘贴：]v 选中 YOUR_TOKEN，c 进入插入后粘贴替换值
+    await page.locator('.cm-content').click()
+    await page.keyboard.press('Escape')
+    await page.keyboard.press(']')
+    await page.keyboard.press('v')
+    await page.keyboard.press('c')
+    await page.evaluate(() => navigator.clipboard.writeText('MY_TOKEN'))
+    await page.keyboard.press('ControlOrMeta+v')
+    await page.keyboard.press('Escape')
+
+    // 粘贴后身份不变：仍是「编辑中」，保存按钮仍是「保存修改」
+    await expect(page.locator('.meta-badge.edit')).toBeVisible()
+    await expect(page.locator('.meta-badge.new')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^保存修改到「curl -sfL/ })).toBeEnabled()
+    expect(await getDoc(page)).toBe(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+
+    await saveViaToolbar(page)
+    const rows = await page.evaluate(
+      (k) => JSON.parse(localStorage.getItem(k) ?? '[]') as { content: string }[],
+      HISTORY_KEY,
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].content).toBe(K3S.replace('YOUR_TOKEN', 'MY_TOKEN'))
+  })
   test('保存按钮随去向改文案：新片段「保存为新片段」→ 编辑中「保存修改」，并显示编辑目标', async ({
     page,
   }) => {
