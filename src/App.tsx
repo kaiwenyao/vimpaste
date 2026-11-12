@@ -116,6 +116,11 @@ export default function App() {
     () => new LocalSnippetStore(LOCAL_SNIPPET_STORAGE),
   )
   const [library, setLibrary] = useState<Snippet[]>(() => alive(store.current()))
+  /**
+   * 当前正在编辑的片段 id；null = 编辑器里是「新片段」。
+   * 不变量：只有显式动作会改它（清空编辑器 / 新建命令或 Prompt / 从片段库打开另一条 /
+   * 删除当前条目 / 清空片段库）；输入、粘贴、撤销等内容编辑永远不改变身份。
+   */
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [editorKind, setEditorKind] = useState<SnippetKind>('command')
   /** 新片段的标题/备注草稿：仅在新片段（未关联条目）阶段收集，随下一次保存入库 */
@@ -396,7 +401,8 @@ export default function App() {
       if (text === '') {
         setManualOverride(false)
         setPlaceholderCount(0)
-        // 清空编辑器即开始新的粘贴：与片段条目解除关联（条目本身保留）
+        // 清空编辑器 = 显式开始一个新片段：解除关联（条目本身保留）。
+        // 内容编辑本身（包括粘贴）不改变身份，身份切换只发生在显式动作上。
         activeEntryIdRef.current = null
         setActiveEntryId(null)
         resetNewMeta()
@@ -614,14 +620,6 @@ export default function App() {
     (id: string) => guardUnsaved(() => loadEntryIntoEditor(id)),
     [guardUnsaved, loadEntryIntoEditor],
   )
-
-  /** 一次真实粘贴 = 一条新条目：粘贴时与当前条目解除关联（旧条目保留，保存后成为新条目） */
-  const handleEditorPaste = useCallback(() => {
-    if (activeEntryIdRef.current === null) return
-    activeEntryIdRef.current = null
-    setActiveEntryId(null)
-    resetNewMeta()
-  }, [resetNewMeta])
 
   const handleDeleteEntry = useCallback((id: string) => {
     // 删除进回收站（30 天内可恢复），不再立即消失。
@@ -1336,7 +1334,6 @@ export default function App() {
                   onCursor: (line, col) => setCursor({ line, col }),
                   onPlaceholderCount: setPlaceholderCount,
                   onVimMode: (mode) => setVimMode((prev) => (prev === mode ? prev : mode)),
-                  onPaste: handleEditorPaste,
                 }}
               />
             </div>

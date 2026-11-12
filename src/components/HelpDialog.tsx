@@ -45,6 +45,10 @@ export function HelpDialog({
           <kbd>⌘↵</kbd>
           <span>复制</span>
         </p>
+        <p className="help-note">
+          编辑已有片段时，输入与粘贴都只修改这一条，点「保存修改」写回；要新建一条，请用片段库的
+          「新建命令 / 新建 Prompt」或先「清空」编辑器。
+        </p>
       </Section>
       <Section title="占位符与通用">
         <Row keys="]v" desc="跳到下一个占位符（并选中，可直接替换）" />
